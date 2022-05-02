@@ -3,7 +3,6 @@
 #	This source code is released for free distribution under the terms
 #	of the GNU General Public License version 2 or (at your option) any
 #	later version.
-
 cmake_minimum_required(VERSION 3.16)
 
 project(ctags)
@@ -31,25 +30,27 @@ else()
   list(REMOVE_ITEM CMAKE_C_FLAGS -static)
 endif()
 
-set(XML_SRCS parsers/maven2.c
-             parsers/dbusintrospect.c
-             parsers/glade.c
-             parsers/svg.c
-             parsers/plist.c
-             parsers/relaxng.c
-             parsers/xml.c
-             parsers/xslt.c)
+set(XML_SRCS ${CMAKE_CURRENT_LIST_DIR}/parsers/maven2.c
+             ${CMAKE_CURRENT_LIST_DIR}/parsers/dbusintrospect.c
+             ${CMAKE_CURRENT_LIST_DIR}/parsers/glade.c
+             ${CMAKE_CURRENT_LIST_DIR}/parsers/svg.c
+             ${CMAKE_CURRENT_LIST_DIR}/parsers/plist.c
+             ${CMAKE_CURRENT_LIST_DIR}/parsers/relaxng.c
+             ${CMAKE_CURRENT_LIST_DIR}/parsers/xml.c
+             ${CMAKE_CURRENT_LIST_DIR}/parsers/xslt.c)
+
 set(YAML_SRCS parsers/yaml.c
               parsers/ansibleplaybook.c)
 
-file(GLOB MAIN_SRCS RELATIVE ${CMAKE_SOURCE_DIR} main/*.c)
-file(GLOB DSL_SRCS RELATIVE ${CMAKE_SOURCE_DIR} dsl/*.c)
-file(GLOB LIBREADTAGS_SRCS RELATIVE ${CMAKE_SOURCE_DIR} libreadtags/*.c)
+file(GLOB MAIN_SRCS ${CMAKE_CURRENT_LIST_DIR}/main/*.c)
+file(GLOB DSL_SRCS ${CMAKE_CURRENT_LIST_DIR}/dsl/*.c)
+file(GLOB LIBREADTAGS_SRCS ${CMAKE_CURRENT_LIST_DIR}/libreadtags/*.c)
 
-list(REMOVE_ITEM MAIN_SRCS main/mini-geany.c)
-file(GLOB OPTLIB_SRCS optlib/*.c)
-file(GLOB PARSERS_CXX_SRCS parsers/cxx/*.c)
-file(GLOB PARSERS_SRCS RELATIVE ${CMAKE_SOURCE_DIR} parsers/*.c)
+list(REMOVE_ITEM MAIN_SRCS ${CMAKE_CURRENT_LIST_DIR}/main/mini-geany.c)
+file(GLOB OPTLIB_SRCS ${CMAKE_CURRENT_LIST_DIR}/optlib/*.c)
+file(GLOB PARSERS_CXX_SRCS ${CMAKE_CURRENT_LIST_DIR}/parsers/cxx/*.c)
+file(GLOB PARSERS_SRCS ${CMAKE_CURRENT_LIST_DIR}/parsers/*.c)
+
 if (NOT DISABLE_XML)
   find_package(LibXml2 QUIET)
   if (NOT LibXml2_FOUND)
@@ -61,9 +62,8 @@ if (NOT DISABLE_XML)
     include_directories(${LIBXML2_INCLUDE_DIRS})
   endif()
 endif()
-if (NOT HAVE_LIBXML)
-  list(REMOVE_ITEM PARSERS_SRCS ${XML_SRCS})
-endif()
+list(REMOVE_ITEM PARSERS_SRCS ${XML_SRCS})
+
 check_include_file(yaml.h HAVE_LIBYAML)
 if (NOT HAVE_LIBYAML)
   list(REMOVE_ITEM PARSERS_SRCS ${YAML_SRCS})

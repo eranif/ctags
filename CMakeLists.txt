@@ -18,18 +18,7 @@ option(DISABLE_INTERNAL_SORT "Use external sort" ON)
 option(DISABLE_ICONV "Disable iconv" OFF)
 option(DISABLE_YAML "Disable yaml" OFF)
 
-if (ENABLE_STATIC)
-  if (MSVC)
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-  else()
-    set(LIBS -static)
-  endif()
-  # FIXME: We could not link libxml2 statically
-  set(DISABLE_XML ON)
-else()
-  list(REMOVE_ITEM CMAKE_C_FLAGS -static)
-endif()
-
+set(LIBS -static)
 set(XML_SRCS ${CMAKE_CURRENT_LIST_DIR}/parsers/maven2.c
              ${CMAKE_CURRENT_LIST_DIR}/parsers/dbusintrospect.c
              ${CMAKE_CURRENT_LIST_DIR}/parsers/glade.c
@@ -39,8 +28,13 @@ set(XML_SRCS ${CMAKE_CURRENT_LIST_DIR}/parsers/maven2.c
              ${CMAKE_CURRENT_LIST_DIR}/parsers/xml.c
              ${CMAKE_CURRENT_LIST_DIR}/parsers/xslt.c)
 
-set(YAML_SRCS parsers/yaml.c
-              parsers/ansibleplaybook.c)
+set(YAML_SRCS ${CMAKE_CURRENT_LIST_DIR}/parsers/yaml.c
+              ${CMAKE_CURRENT_LIST_DIR}/parsers/ansibleplaybook.c
+              ${CMAKE_CURRENT_LIST_DIR}/parsers/openapi.c
+              ${CMAKE_CURRENT_LIST_DIR}/parsers/yamlfrontmatter.c
+              )
+
+set(PCRE2_SRCS ${CMAKE_CURRENT_LIST_DIR}/main/lregex-pcre2.c)
 
 file(GLOB MAIN_SRCS ${CMAKE_CURRENT_LIST_DIR}/main/*.c)
 file(GLOB DSL_SRCS ${CMAKE_CURRENT_LIST_DIR}/dsl/*.c)
@@ -51,25 +45,10 @@ file(GLOB OPTLIB_SRCS ${CMAKE_CURRENT_LIST_DIR}/optlib/*.c)
 file(GLOB PARSERS_CXX_SRCS ${CMAKE_CURRENT_LIST_DIR}/parsers/cxx/*.c)
 file(GLOB PARSERS_SRCS ${CMAKE_CURRENT_LIST_DIR}/parsers/*.c)
 
-if (NOT DISABLE_XML)
-  find_package(LibXml2 QUIET)
-  if (NOT LibXml2_FOUND)
-    message("libxml2 not found")
-  else()
-    message("Found libxml2: ${LIBXML2_VERSION_STRING}")
-    set(HAVE_LIBXML 1)
-    list(APPEND LIBS ${LIBXML2_LIBRARIES})
-    include_directories(${LIBXML2_INCLUDE_DIRS})
-  endif()
-endif()
 list(REMOVE_ITEM PARSERS_SRCS ${XML_SRCS})
+list(REMOVE_ITEM PARSERS_SRCS ${YAML_SRCS})
+list(REMOVE_ITEM MAIN_SRCS ${PCRE2_SRCS})
 
-check_include_file(yaml.h HAVE_LIBYAML)
-if (NOT HAVE_LIBYAML)
-  list(REMOVE_ITEM PARSERS_SRCS ${YAML_SRCS})
-else()
-  list(APPEND LIBS yaml)
-endif()
 check_include_file(jansson.h HAVE_JANSSON)
 if (HAVE_JANSSON)
   list(APPEND LIBS jansson)
@@ -143,18 +122,6 @@ if (WIN32)
                     -Dstrcasecmp=stricmp
                     -D_CONSOLE)
   endif()
-endif()
-
-find_path(PCRE2_PATH pcre2.h)
-if(NOT PCRE2_PATH)
-  message(FATAL_ERROR "Can't find folder containing pcre2.h")
-else()
-  message(STATUS "pcre2.h found ${PCRE2_PATH}")
-  set(HAVE_PCRE2 1)
-endif()
-
-if(UNIX)
-    list(APPEND LIBS pcre2-8 pthread)
 endif()
 
 configure_file(config.h.in.cmake "${CMAKE_BINARY_DIR}/config.h")

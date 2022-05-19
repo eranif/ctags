@@ -18,7 +18,10 @@ option(DISABLE_INTERNAL_SORT "Use external sort" ON)
 option(DISABLE_ICONV "Disable iconv" OFF)
 option(DISABLE_YAML "Disable yaml" OFF)
 
-set(LIBS -static)
+if(UNIX AND NOT APPLE)
+  set(LIBS -static)
+endif()
+
 set(XML_SRCS ${CMAKE_CURRENT_LIST_DIR}/parsers/maven2.c
              ${CMAKE_CURRENT_LIST_DIR}/parsers/dbusintrospect.c
              ${CMAKE_CURRENT_LIST_DIR}/parsers/glade.c

@@ -304,6 +304,7 @@ int cxxParserMaybeParseKnRStyleFunctionDefinition(void)
 			tag->extensionFields.signature = vStringValue(pszSignature);
 
 		iCorkQueueIndex = cxxTagCommit(&iCorkQueueIndexFQ);
+		cxxTagUseTokenAsPartOfDefTag(iCorkQueueIndex, pIdentifier);
 
 		if(pszSignature)
 			vStringDelete(pszSignature);
@@ -635,6 +636,42 @@ static bool cxxParserLookForFunctionSignatureCheckParenthesisAndIdentifier(
 	}
 
 	CXX_DEBUG_LEAVE_TEXT("Doesn't look like a valid parenthesis chain");
+	return false;
+}
+
+// If pInfo->pIdentifierStart has the same name as the name of
+// class|enum|union|struct scope, we consider pInfo->pIdentifierStart
+// points a constructor.
+static bool cxxParserisConstructor(const char *szFuncname)
+{
+	if (cxxScopeIsGlobal())
+		return false;
+
+	switch (cxxScopeGetType())
+	{
+	case CXXScopeTypeClass:
+	case CXXScopeTypeEnum:
+	case CXXScopeTypeUnion:
+	case CXXScopeTypeStruct:
+		break;
+	default:
+		return false;
+	}
+
+	const char *szScope = cxxScopeGetName();
+	const char *szTmp = strrstr (szScope, szFuncname);
+
+	if (szTmp == NULL)
+		return false;
+
+	/* szFuncname == "C", szScope == "C" */
+	if (szTmp == szScope)
+		return true;
+
+	/* szFuncname == "C", szScope == "X::C" */
+	if (szTmp[-1] == ':')
+		return true;
+
 	return false;
 }
 
@@ -1022,9 +1059,6 @@ bool cxxParserLookForFunctionSignature(
 		if(
 				// The previous token is >
 				cxxTokenTypeIs(pToken->pPrev,CXXTokenTypeGreaterThanSign) &&
-				// We extracted an initial template<*> token chain
-				// (which has been removed from the currently examined chain)
-				g_cxx.pTemplateTokenChain &&
 				// We skipped an additional <...> block in *this* chain
 				bSkippedAngleBrackets
 			)
@@ -1039,7 +1073,17 @@ bool cxxParserLookForFunctionSignature(
 			if(
 					pSpecBegin &&
 					pSpecBegin->pPrev &&
-					cxxTokenTypeIs(pSpecBegin->pPrev,CXXTokenTypeIdentifier)
+					cxxTokenTypeIs(pSpecBegin->pPrev,CXXTokenTypeIdentifier) &&
+					(
+						// We extracted an initial template<*> token chain
+						// (which has been removed from the currently examined chain)
+						g_cxx.pTemplateTokenChain ||
+						// g_cxx.pTemplateTokenChain is set to null if "{" after "class" keyword
+						// is found. As a result, a constructor with <*> defined in a template
+						// class could not be tagged. The next additional condition is for
+						// tagging the condition in this situation.
+						cxxParserisConstructor(vStringValue(pSpecBegin->pPrev->pszWord))
+					)
 				)
 			{
 				// template specialisation
@@ -1063,7 +1107,7 @@ bool cxxParserLookForFunctionSignature(
 							pParamInfo
 						)
 					)
-						goto next_token;
+					goto next_token;
 
 			}
 
@@ -1686,6 +1730,11 @@ int cxxParserEmitFunctionTags(
 				uProperties |= CXXTagPropertyExtern;
 			if(g_cxx.uKeywordState & CXXParserKeywordStateSeenAttributeDeprecated)
 				uProperties |= CXXTagPropertyDeprecated;
+			if(g_cxx.uKeywordState & CXXParserKeywordStateSeenConstexpr)
+				uProperties |= CXXTagPropertyConstexpr;
+			if(g_cxx.uKeywordState & CXXParserKeywordStateSeenConsteval)
+				uProperties |= CXXTagPropertyConsteval;
+			// constinit is not here; it is for variables.
 			if(pInfo->pSignatureConst)
 				uProperties |= CXXTagPropertyConst;
 			if(pInfo->uFlags & CXXFunctionSignatureInfoPure)
@@ -1712,6 +1761,7 @@ int cxxParserEmitFunctionTags(
 		}
 
 		int iCorkQueueIndex = cxxTagCommit(piCorkQueueIndexFQ);
+		cxxTagUseTokenAsPartOfDefTag(iCorkQueueIndex, pIdentifier);
 
 		if(piCorkQueueIndex)
 			*piCorkQueueIndex = iCorkQueueIndex;
@@ -1878,7 +1928,6 @@ void cxxParserEmitFunctionParameterTags(CXXTypedVariableSet * pInfo)
 		} else {
 			pTypeName = NULL;
 		}
-		tag->extensionFields.nth = i;
 
 		tag->isFileScope = true;
 
@@ -1889,6 +1938,8 @@ void cxxParserEmitFunctionParameterTags(CXXTypedVariableSet * pInfo)
 
 		if(pTypeName)
 		{
+			if (pInfo->uAnonymous & (0x1u << i))
+				PARSER_TRASH_BOX_TAKE_BACK (pInfo->aIdentifiers[i]);
 			cxxTokenDestroy(pInfo->aIdentifiers[i]);
 			cxxTokenDestroy(pTypeName);
 		}
@@ -2180,6 +2231,7 @@ try_again:
 						pIdentifier->iLineNumber = t->pPrev->iLineNumber;
 						pIdentifier->oFilePosition = t->pPrev->oFilePosition;
 						pParamInfo->uAnonymous |= (0x1u << pParamInfo->uCount);
+						PARSER_TRASH_BOX (pIdentifier, cxxTokenDestroy);
 					}
 					pParamInfo->aIdentifiers[pParamInfo->uCount] = pIdentifier;
 					pParamInfo->uCount++;
@@ -2233,7 +2285,7 @@ try_again:
 			pParamInfo->uCount++;
 
 			PARSER_TRASH_BOX (pFakeStart, cxxTokenDestroy);
-			/* pFakeId may be destroyed via pParamInfo->aIdentifiers[i]. */
+			PARSER_TRASH_BOX (pFakeId, cxxTokenDestroy);
 		}
 
 		if(cxxTokenTypeIs(t,CXXTokenTypeClosingParenthesis))

@@ -13,6 +13,8 @@ is_feature_available ${CTAGS} '!' gcov
 {
     echo '{"command":"generate-tags", "filename":"input.c", "size": 28}'
     echo 'int main(void) { return 0; }'
-} | $CTAGS --quiet --options=NONE  --_interactive=sandbox
-
-exit $?
+} | $CTAGS --quiet --options=NONE  --_interactive=sandbox > /tmp/ctags-Tmain-$$
+r=$?
+jdropver < /tmp/ctags-Tmain-$$
+rm /tmp/ctags-Tmain-$$
+exit $r

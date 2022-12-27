@@ -8,19 +8,25 @@ on:
 
 jobs:
   testing:
-    runs-on: macos-10.15
+    runs-on: macos-12
     
     steps:
     - uses: actions/checkout@v2
 
-    - uses: leleliu008/github-actions-vagrant@v1
+    - uses: actions/cache@v2
+      with:
+        path: ~/.vagrant.d/boxes
+        key: vagrant-generic-netbsd-9
+        restore-keys: |
+          vagrant-generic-netbsd-9
+
+    - uses: leleliu008/github-actions-vagrant@v2
       with:
         mem: 2048
         box: generic/netbsd9
+        log: warn
         run: |
           run sudo pkgin -y install mozilla-rootcerts automake autoconf pkg-config gmake
-
-          run sudo mozilla-rootcerts install
 
           run cc --version
 

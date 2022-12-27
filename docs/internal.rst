@@ -92,13 +92,13 @@ Output tag stream
 
 Ctags provides ``makeTagEntry`` to parsers as an entry point for writing
 tag information to MIO. ``makeTagEntry`` calls ``writeTagEntry`` if the
-parser does not set ``useCork`` field. ``writeTagEntry`` calls ``writerWriteTag``.
+parser does not set ``CORK_QUEUE`` to ``useCork`` field. ``writeTagEntry`` calls ``writerWriteTag``.
 ``writerWriteTag`` just calls ``writeEntry`` of writer backends.
 ``writerTable`` variable holds the four backends: ctagsWriter, etagsWriter,
 xrefWriter, and jsonWriter.
 One of them is chosen depending on the arguments passed to ctags.
 
-If ``useCork`` is set, the tag information goes to a queue on memory.
+If ``CORK_QUEUE`` is set to ``useCork``, the tag information goes to a queue on memory.
 The queue is flushed when ``useCork`` in unset. See "`cork API`_" for more
 details.
 
@@ -117,13 +117,13 @@ Following code is taken from ``clojure.c`` (with some modifications).
 
 		if (vStringLength (parent) > 0)
 		{
-			current.extensionFields.scope[0] = ClojureKinds[K_NAMESPACE].name;
-			current.extensionFields.scope[1] = vStringValue (parent);
+			current.extensionFields.scopeKind = ClojureKinds[K_NAMESPACE].name;
+			current.extensionFields.scopeName = vStringValue (parent);
 		}
 
 		makeTagEntry (&current);
 
-``parent``, ``scope [0]`` and ``scope [1]`` are vStrings. The parser must manage
+``parent``, ``scopeKind`` and ``scopeName`` are vStrings. The parser must manage
 their life cycles; the parser cannot free them till the tag referring them via
 its scope fields are emitted, and must free them after emitting.
 
@@ -183,7 +183,7 @@ the object after calling.
 
 .. code-block:: c
 
-		static int parent = CORK_NIL;
+		int parent = CORK_NIL;
 		...
 		parent = makeTagEntry (&e);
 
@@ -198,9 +198,9 @@ When passing ``current`` to ``makeTagEntry``, the ``scopeIndex`` is
 referred for emitting the scope information of ``current``.
 
 ``scopeIndex`` must be set to ``CORK_NIL`` if a tag is not in any scope.
-When using ``scopeIndex`` of ``current``, ``NULL`` must be assigned to both
-``current.extensionFields.scope[0]`` and
-``current.extensionFields.scope[1]``.  ``initTagEntry`` function does this
+When using ``scopeIndex`` of ``current``, ``KIND_GHOST_INDEX`` must be assigned
+to ``current.extensionFields.scopeKindIndex`` and  ``NULL`` must be assigned to
+``current.extensionFields.scopeName``.  ``initTagEntry`` function does this
 initialization internally, so you generally you don't have to write
 the initialization explicitly.
 
@@ -230,6 +230,109 @@ Setting ``requestAutomaticFQTag`` to ``TRUE`` implies setting
 ``useCork`` to ``CORK_QUEUE``.
 
 .. NOT REVIEWED YET
+
+.. _symtabAPI:
+
+symbol table API
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+*symbol table* API is an extension to the cork API. The cork API was
+introduced to provide the simple way to represent mapping (*forward
+mapping*) from a language object (*child object*) to its upper scope
+(*parent object*). *symbol table* API is for representing the mapping
+(*reverse mapping*) opposite direction; you can look up (or traverse)
+child tags defined (or used) in a given tag.
+
+To use this API, a parser must set ``CORK_SYMTAB`` to ``useCork`` member
+of ``parserDefinition`` in addition to setting ``CORK_QUEUE`` as preparation.
+
+An example taken from R parser:
+
+.. code-block:: c
+
+	extern parserDefinition *RParser (void)
+	{
+		static const char *const extensions[] = { "r", "R", "s", "q", NULL };
+		parserDefinition *const def = parserNew ("R");
+
+		...
+
+		def->useCork = CORK_QUEUE | CORK_SYMTAB;
+
+		...
+
+		return def;
+	}
+
+
+To install a reverse mapping between a parent and its child tags,
+call ``registerEntry`` with the cork index for a child after making
+the child tag filling ``scopeIndex``:
+
+.. code-block:: c
+
+	int parent = CORK_NIL;
+	...
+	parent = makeTagEntry (&e_parent);
+
+	...
+
+	tagEntryInfo e_child;
+	...
+	initTagEntry (&e_child, ...);
+	e_child.extensionFields.scopeIndex = parent;    /* setting up forward mapping */
+	...
+	int child = makeTagEntry (&e_child);
+
+	registerEntry (child);                          /* setting up reverse mapping */
+
+``registerEntry`` stores ``child`` to the symbol table of ``parent``.
+If ``scopeIndex`` of ``child`` is ``CORK_NIL``, the ``child`` is stores
+to the *toplevel scope*.
+
+``unregisterEntry`` is for clearing (and updating) the reverse mapping
+of a child. Consider the case you want to change the scope of ``child``
+from ``newParent``.
+
+.. code-block:: c
+
+	unregisterEntry (child);                         /* delete the reverse mapping. */
+	tagEntryInfo *e_child = getEntryInCorkQueue (child);
+	e_child->extensionFields.scopeIndex = newParent; /* update the forward mapping. */
+	registerEntry (child);                           /* set the new reverse mapping. */
+
+``foreachEntriesInScope`` is the function for traversing all child
+tags stored to the parent tag specified with ``corkIndex``.
+If the ``corkIndex`` is ``CORK_NIL``, the children defined (and/or
+used) in *toplevel scope*  are traversed.
+
+.. code-block:: c
+
+	typedef bool (* entryForeachFunc) (int corkIndex,
+									   tagEntryInfo * entry,
+									   void * data);
+	bool          foreachEntriesInScope (int corkIndex,
+										 const char *name, /* or NULL */
+										 entryForeachFunc func,
+										 void *data);
+
+``foreachEntriesInScope``  takes a ``foreachEntriesInScope`` typed
+callback function.  ``foreachEntriesInScope`` passes the cork
+index and a pointer for ``tagEntryInfo`` object of children.
+
+`anyEntryInScope` is a function for finding a child tag stored
+to the parent tag specified with ``corkIndex``. It returns
+the cork index for the child tag. If ``corkIndex`` is ``CORK_NIL``,
+`anyEntryInScope` finds a tag stored to the toplevel scope.
+The returned child tag has ``name`` as its name as far as ``name``
+is not ``NULL``.
+
+.. code-block:: c
+
+	int           anyEntryInScope       (int corkIndex,
+										 const char *name,
+										 bool onlyDefinitionTag);
+
 
 .. _tokeninfo:
 
@@ -391,9 +494,14 @@ Available parser names can be listed by running ctags with
 the 3rd and 5th argument. They are byte offsets of the start and the end of the
 C language area from the beginning of the line which is 0 in this case. In
 general, the guest language's section does not have to start at the beginning of
-the line in which case the two offsets have to be provided. Compilers reading
+the line in which case the two offsets have to be provided. Parsers reading
 the input character by character can obtain the current offset by calling
 ``getInputLineOffset()``.
+
+In some cases, you may want to specifying the offset of the end of
+line (EOL).  A macro ``EOL_CHAR_OFFSET`` defined in ``main/promise.h``
+can be used for specying EOL in abstracted way; you don't have to find
+the real offset for the EOL.
 
 Internal design
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

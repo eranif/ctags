@@ -42,6 +42,18 @@
 #define IDX_SYSTEMVERILOG   0
 #define IDX_VERILOG         1
 
+#ifndef DEBUG
+#define VERBOSE(...) do { \
+		verbose("%s:%ld:%s:%d:Internal Error:", getInputFileName(), getInputLineNumber(), __FILE__, __LINE__); \
+		verbose(__VA_ARGS__); \
+	} while (0)
+#else
+#define VERBOSE(...) do { \
+		fprintf(stderr, "%s:%ld:%s:%d:Internal Error:", getInputFileName(), getInputLineNumber(), __FILE__, __LINE__); \
+		fprintf(stderr, __VA_ARGS__); \
+	} while (0)
+#endif
+
 /*
  *   DATA DECLARATIONS
  */
@@ -96,6 +108,10 @@ typedef enum {
 	K_NETTYPE,
 } verilogKind;
 
+typedef enum {
+       R_MODULE_DECL,
+} verilogModuleRole;
+
 typedef struct {
 	const char *keyword;
 	verilogKind kind;
@@ -129,11 +145,20 @@ static int Ungetc;
 static int Lang_verilog;
 static int Lang_systemverilog;
 
+static roleDefinition VerilogModuleRoles [] = {
+ { true, "decl", "declaring instances" },
+};
+
+static roleDefinition SystemVerilogModuleRoles [] = {
+ { true, "decl", "declaring instances" },
+};
+
 static kindDefinition VerilogKinds [] = {
  { true, 'c', "constant",  "constants (define, parameter, specparam)" },
  { true, 'e', "event",     "events" },
  { true, 'f', "function",  "functions" },
- { true, 'm', "module",    "modules" },
+ { true, 'm', "module",    "modules",
+   .referenceOnly = false, ATTACH_ROLES(VerilogModuleRoles) },
  { true, 'n', "net",       "net data types" },
  { true, 'p', "port",      "ports" },
  { true, 'r', "register",  "variable data types" },
@@ -146,7 +171,8 @@ static kindDefinition SystemVerilogKinds [] = {
  { true, 'c', "constant",  "constants (define, parameter, specparam, enum values)" },
  { true, 'e', "event",     "events" },
  { true, 'f', "function",  "functions" },
- { true, 'm', "module",    "modules" },
+ { true, 'm', "module",    "modules",
+   .referenceOnly = false, ATTACH_ROLES(SystemVerilogModuleRoles) },
  { true, 'n', "net",       "net data types" },
  { true, 'p', "port",      "ports" },
  { true, 'r', "register",  "variable data types" },
@@ -404,8 +430,8 @@ static int readWordTokenNoSkip (tokenInfo *const token, int c);
 static int skipBlockName (tokenInfo *const token, int c);
 static int skipClockEvent (tokenInfo* token, int c);
 static int skipDelay (tokenInfo* token, int c);
-static int tagIdentifierList (tokenInfo *const token, int c, verilogKind kind, bool mayPortDecl);
-static int tagNameList (tokenInfo* token, int c, verilogKind kind);
+static int tagIdsInPort (tokenInfo *const token, int c, verilogKind kind, bool mayPortDecl);
+static int tagIdsInDataDecl (tokenInfo* token, int c, verilogKind kind);
 
 /*
  *   FUNCTION DEFINITIONS
@@ -680,6 +706,20 @@ static bool isIdentifierCharacter (const int c)
 	return (isalnum (c) || c == '_' || c == '`' || c == '$');
 }
 
+// check if double colon.
+static bool isDoubleColon (int c)
+{
+	if (c != ':')
+		return false;
+	c = vGetc ();
+	if (c == ':') {
+		return true;
+	} else {
+		vUngetc (c);
+		return false;
+	}
+}
+
 static int skipWhite (int c)
 {
 	while (isspace (c))
@@ -752,11 +792,14 @@ static int skipExpression (int c)
 // Should be used after readWordTokenNoSkip() for compiler directives
 static int skipToNewLine (int c)
 {
-	bool escape = false;
-	for ( ; (c != '\n' || escape) &&  c != EOF; c = vGetc ())
-		escape = (c == '\\');
-
-	return c;	// '\n' or EOF
+	int prev = EOF; // The previous char of 'c' never be a EOF.
+	while (!((prev != '\\') && (c == '\n')) && (c != EOF)) {
+		prev = c;
+		// Getc() does not work for a comment in multi-line macro
+		c = getcFromInputFile ();
+	}
+	Assert(c == '\n' || c == EOF);
+	return c;
 }
 
 static int skipMacro (int c, tokenInfo *token)
@@ -915,12 +958,12 @@ static int dropEndContext (tokenInfo *const token, int c)
 		vStringDelete (endTokenName);
 	}
 	else
-		verbose ("Unexpected current context %s\n", vStringValue (currentContext->name));
+		VERBOSE ("Unexpected current context %s\n", vStringValue (currentContext->name));
 	return c;
 }
 
 
-static void createTag (tokenInfo *const token, verilogKind kind)
+static void createTagFull (tokenInfo *const token, verilogKind kind, int role, tokenInfo *const typeref)
 {
 	tagEntryInfo tag;
 
@@ -952,7 +995,10 @@ static void createTag (tokenInfo *const token, verilogKind kind)
 	}
 
 	/* Create tag */
-	initTagEntry (&tag, vStringValue (token->name), kind);
+	if (role == ROLE_DEFINITION_INDEX)
+		initTagEntry (&tag, vStringValue (token->name), kind);
+	else
+		initRefTagEntry (&tag, vStringValue (token->name), kind, role);
 	tag.lineNumber = token->lineNumber;
 	tag.filePosition = token->filePosition;
 
@@ -971,12 +1017,19 @@ static void createTag (tokenInfo *const token, verilogKind kind)
 		verbose ("Class %s extends %s\n", vStringValue (token->name), tag.extensionFields.inheritance);
 	}
 
+	if (typeref)
+	{
+		tag.extensionFields.typeRef [0] = getNameForKind (typeref->kind);
+		tag.extensionFields.typeRef [1] = vStringValue (typeref->name);
+	}
+
 	if (token->parameter)
 		attachParserField (&tag, false, fieldTable [F_PARAMETER].ftype, "");
 
 	makeTagEntry (&tag);
 
-	if (isXtagEnabled (XTAG_QUALIFIED_TAGS) && currentContext->kind != K_UNDEFINED)
+	if (isXtagEnabled (XTAG_QUALIFIED_TAGS) && currentContext->kind != K_UNDEFINED
+		&& role == ROLE_DEFINITION_INDEX)
 	{
 		vString *const scopedName = vStringNew ();
 
@@ -992,7 +1045,7 @@ static void createTag (tokenInfo *const token, verilogKind kind)
 	}
 
 	/* Push token as context if it is a container */
-	if (container)
+	if (container && role == ROLE_DEFINITION_INDEX)
 	{
 		createContext (kind, token->name);
 
@@ -1002,7 +1055,7 @@ static void createTag (tokenInfo *const token, verilogKind kind)
 		for (unsigned int i = 0; i < ptrArrayCount (tagContents); i++)
 		{
 			tokenInfo *content = ptrArrayItem (tagContents, i);
-			createTag (content, content->kind);
+			createTagFull (content, content->kind, ROLE_DEFINITION_INDEX, NULL);
 		}
 
 		/* Drop temporary contexts */
@@ -1012,6 +1065,21 @@ static void createTag (tokenInfo *const token, verilogKind kind)
 
 	/* Clear no longer required inheritance information */
 	vStringClear (token->inheritance);
+}
+
+static void createTagWithTypeRef (tokenInfo *const token, verilogKind kind, tokenInfo *const typeref)
+{
+	createTagFull (token, kind, ROLE_DEFINITION_INDEX, typeref);
+}
+
+static void createTag (tokenInfo *const token, verilogKind kind)
+{
+	createTagWithTypeRef (token, kind, NULL);
+}
+
+static void createRefTag (tokenInfo *const token, verilogKind kind, int role)
+{
+	createTagFull (token, kind, role, NULL);
 }
 
 static int skipBlockName (tokenInfo *const token, int c)
@@ -1060,11 +1128,11 @@ static int processPortList (tokenInfo *token, int c, bool mayPortDecl)
 	if (c == '(')
 	{
 		c = skipWhite (vGetc ());	// skip '('
-		c = tagIdentifierList (token, c, K_PORT, mayPortDecl);
+		c = tagIdsInPort (token, c, K_PORT, mayPortDecl);
 		if (c == ')')	// sanity check
 			c = skipWhite (vGetc ());
 		else
-			verbose ("Unexpected input: %c\n", c);
+			VERBOSE ("Unexpected input: %c\n", c);
 	}
 	return c;
 }
@@ -1102,17 +1170,11 @@ static int processFunction (tokenInfo *const token, int c)
 		c = skipParameterAssignment (c);
 
 		/* Identify class type prefixes and create respective context*/
-		if (isInputLanguage (Lang_systemverilog) && c == ':')
+		if (isInputLanguage (Lang_systemverilog) && isDoubleColon(c))
 		{
-			c = vGetc ();
-			if (c == ':')
-			{
-				verbose ("Found function declaration with class type %s\n", vStringValue (token->name));
-				createContext (K_CLASS, token->name);
-				currentContext->classScope = true;
-			}
-			else
-				vUngetc (c);
+			verbose ("Found function declaration with class type %s\n", vStringValue (token->name));
+			createContext (K_CLASS, token->name);
+			currentContext->classScope = true;
 		}
 	}
 	verbose ("Found function: %s\n", vStringValue (token->name));
@@ -1142,7 +1204,7 @@ static int processEnum (tokenInfo *const token, int c)
 
 	/* Following identifiers are tag names */
 	verbose ("Find enum tags. Token %s kind %d\n", vStringValue (enumToken->name), enumToken->kind);
-	c = tagNameList (enumToken, c, enumToken->kind);
+	c = tagIdsInDataDecl (enumToken, c, enumToken->kind);
 	deleteToken (enumToken);
 
 	// Clean up the tag content list at the end of the declaration to support multiple variables
@@ -1168,7 +1230,7 @@ static int processStruct (tokenInfo *const token, int c)
 
 	/* Following identifiers are tag names */
 	verbose ("Find struct|union tags. Token %s kind %d\n", vStringValue (token->name), token->kind);
-	c = tagNameList (token, c, kind);
+	c = tagIdsInDataDecl (token, c, kind);
 	ptrArrayClear (tagContents);
 	return c;
 }
@@ -1296,7 +1358,7 @@ static int processClass (tokenInfo *const token, int c, verilogKind kind)
 
 	if (token->kind != K_IDENTIFIER)
 	{
-		verbose ("Unexpected input: class name is expected.\n");
+		VERBOSE ("Unexpected input: class name is expected.\n");
 		return c;
 	}
 
@@ -1384,6 +1446,25 @@ static int processAssertion (tokenInfo *const token, int c)
 	return c;
 }
 
+// data_declaration ::=
+//   ...
+//   import < package_identifier :: identifier | package_identifier :: * > ;
+// dpi_import_export ::=
+//   import ( "DPI-C" | "DPI" ) [ context | pure ] [ c_identifier = ] function data_type_or_void function_identifier [ ( [ tf_port_list ] ) ] ;
+// | import ( "DPI-C" | "DPI" ) [ context ]        [ c_identifier = ] task task_identifier [ ( [ tf_port_list ] ) ] ;
+// | export ( "DPI-C" | "DPI" ) [ c_identifier = ] function function_identifier ;
+// | export ( "DPI-C" | "DPI" ) [ c_identifier = ] task     task_identifier ;
+static int processImport (tokenInfo *const token, int c)
+{
+	if (c == '"') {	// dpi_import: we don't care about export.
+		currentContext->prototype = true;
+	} else {
+		c = skipToSemiColon (c);
+		c = skipWhite (vGetc ());	// skip semicolon
+	}
+	return c;
+}
+
 // non-ANSI type
 // ( module | interface | program ) [ static | automatic ] identifier { package_import_declaration } [ parameter_port_list ] ( port { , port } ) ;
 // ANSI type
@@ -1418,7 +1499,7 @@ static int processDesignElementL (tokenInfo *const token, int c)
 		}
 		else
 		{
-			verbose ("Unexpected input\n");
+			VERBOSE ("Unexpected input\n");
 			return c;
 		}
 	}
@@ -1520,7 +1601,7 @@ static int pushEnumNames (tokenInfo* token, int c)
 		{
 			if (!isWordToken (c))
 			{
-				verbose ("Unexpected input: %c\n", c);
+				VERBOSE ("Unexpected input: %c\n", c);
 				return c;
 			}
 			c = readWordToken (token, c);
@@ -1558,7 +1639,7 @@ static int pushMembers (tokenInfo* token, int c)
 			bool not_used;
 			if (!isWordToken (c))
 			{
-				verbose ("Unexpected input: %c\n", c);
+				VERBOSE ("Unexpected input: %c\n", c);
 				return c;
 			}
 			c = readWordToken (token, c);
@@ -1585,7 +1666,7 @@ static int pushMembers (tokenInfo* token, int c)
 					c = readWordToken (token, c);
 				else
 				{
-					verbose ("Unexpected input.\n");
+					VERBOSE ("Unexpected input.\n");
 					break;
 				}
 			}
@@ -1657,7 +1738,7 @@ static int processType (tokenInfo* token, int c, verilogKind* kind, bool* with)
 			}
 			else
 			{
-				verbose ("Unexpected input\n");	// FIXME: x dist {}, with
+				VERBOSE ("Unexpected input\n");	// FIXME: x dist {}, with
 				break;
 			}
 		}
@@ -1688,12 +1769,10 @@ static int skipClassType (tokenInfo* token, int c)
 		}
 		else if (c == ':')
 		{
-			c = skipWhite (vGetc ());
-			if (c != ':')
+			if (!isDoubleColon(c))
 			{
-				verbose ("Unexpected input.\n");
-				vUngetc (c);
-				return ':';
+				VERBOSE ("Unexpected input.\n");
+				return c;
 			}
 			c = skipWhite (vGetc ());
 			if (isWordToken (c))
@@ -1709,7 +1788,7 @@ static int skipClassType (tokenInfo* token, int c)
 	return c;
 }
 
-// Tag a list of identifiers
+// Tag a list of identifiers in a port list
 // data_type :: =
 //   ...
 //   | virtual [ interface ] identifier [ # ( [ ... ] ) ]  [ . identifier ]
@@ -1718,7 +1797,7 @@ static int skipClassType (tokenInfo* token, int c)
 //   | ...
 //
 //   mayPortDecl: may be a ANSI port declaration.  true for module, interface, or program.
-static int tagIdentifierList (tokenInfo *const token, int c, verilogKind kind, bool mayPortDecl)
+static int tagIdsInPort (tokenInfo *const token, int c, verilogKind kind, bool mayPortDecl)
 {
 	bool first_port = true;
 	bool enableTag = true;
@@ -1781,10 +1860,11 @@ static int tagIdentifierList (tokenInfo *const token, int c, verilogKind kind, b
 	return c;
 }
 
-static int tagNameList (tokenInfo* token, int c, verilogKind kind)
+// Tag a list of identifiers in a data declaration
+static int tagIdsInDataDecl (tokenInfo* token, int c, verilogKind kind)
 {
 	c = skipClassType (token, c);
-	if (c == ':' || c == ';')	// ## (cycle delay) or unexpected input
+	if (c == ';')
 		return c;
 
 	// skip drive|charge strength or type_reference, dimensions, and delay for net
@@ -1793,8 +1873,9 @@ static int tagNameList (tokenInfo* token, int c, verilogKind kind)
 	c = skipDimension (c);
 	if (c == '.')
 		return c;	// foo[...].bar = ..;
-	c = skipDelay (token, c);
+	c = skipDelay (token, c);	// ## (cycle delay)
 
+	tokenInfo *tokenSaved = dupToken(token); // maybe a module_identifier
 	while (c != EOF)
 	{
 		bool with = false;
@@ -1808,7 +1889,7 @@ static int tagNameList (tokenInfo* token, int c, verilogKind kind)
 			if (c == '=')
 				c = skipExpression (c);
 		}
-		else if (c == '(' || c == '[')	// should be instance
+		else if (c == '(' || c == '[')	// should be an instance
 		{
 			c = skipDimension (c); // name_of_instance {unpacked_dimension}
 			c = skipPastMatch ("()"); // list_of_port_connections
@@ -1817,8 +1898,10 @@ static int tagNameList (tokenInfo* token, int c, verilogKind kind)
 			// var `add_t(foo) = '0;
 			if (c == ';' || c == ',')
 			{
+				tokenSaved->kind = K_MODULE;   // for typeRef field
 				verbose ("find instance: %s with kind %s\n", vStringValue (token->name), getNameForKind (K_INSTANCE));
-				createTag (token, K_INSTANCE);
+				createTagWithTypeRef (token, K_INSTANCE, tokenSaved);
+				createRefTag (tokenSaved, K_MODULE, R_MODULE_DECL);
 			}
 		}
 		c = skipMacro (c, token);	// `ifdef, `else, `endif, etc. (before comma)
@@ -1827,6 +1910,7 @@ static int tagNameList (tokenInfo* token, int c, verilogKind kind)
 		c = skipWhite (vGetc ());	// skip ','
 		c = skipMacro (c, token);	// `ifdef, `else, `endif, etc. (after comma)
 	}
+	deleteToken (tokenSaved);
 	return c;
 }
 
@@ -1846,7 +1930,7 @@ static int findTag (tokenInfo *const token, int c)
 			if (token->kind == K_PORT && currentContext->kind == K_CLOCKING)
 				c = skipToSemiColon (c); // clocking items are not port definitions
 			else
-				c = tagNameList (token, c, token->kind);
+				c = tagIdsInDataDecl (token, c, token->kind);
 			break;
 		case K_IDENTIFIER:
 			{
@@ -1855,14 +1939,14 @@ static int findTag (tokenInfo *const token, int c)
 
 				if (c == ':')
 					; /* label */
-				else if (c == ',' || c == '{')	// "foo, ..." or "coverpoint foo { ... }"
+				else if (c == ',' || c == '.' || c == '{')	// "foo, ...", "foo.bar,...", or "coverpoint foo { ... }"
 					c = skipWhite (vGetc ());
 				else if (c == '(')	// task, function, or method call
 					c = skipPastMatch ("()");
 				else if (c == '=')	// assignment
 					c = skipExpression (skipWhite (vGetc ()));
 				else
-					c = tagNameList (token, c, token->kind); /* user defined type */
+					c = tagIdsInDataDecl (token, c, token->kind); /* user defined type */
 			}
 			break;
 		case K_CLASS:
@@ -1878,8 +1962,10 @@ static int findTag (tokenInfo *const token, int c)
 		case K_STRUCT:
 			c = processStruct (token, c);
 			break;
-		case K_PROTOTYPE:
 		case K_IMPORT:
+			c = processImport (token, c);
+			break;
+		case K_PROTOTYPE:
 		case K_WITH:
 			currentContext->prototype = true;
 			break;
@@ -1925,7 +2011,7 @@ static int findTag (tokenInfo *const token, int c)
 		case K_IGNORE:
 			break;
 		default:
-			verbose ("Unexpected kind->token %d\n", token->kind);
+			VERBOSE ("Unexpected kind->token %d\n", token->kind);
 	}
 	return c;
 }
@@ -1945,7 +2031,8 @@ static void findVerilogTags (void)
 			case ':':
 				/* Store current block name whenever a : is found
 				 * This is used later by any tag type that requires this information */
-				vStringCopy (currentContext->blockName, token->name);
+				if (!isDoubleColon(c))
+					vStringCopy (currentContext->blockName, token->name);
 				c = skipWhite (vGetc ());
 				break;
 			case ';':
@@ -1959,10 +2046,10 @@ static void findVerilogTags (void)
 				c = skipWhite (vGetc ());
 				break;
 			case '(':	// ignore locally declared variables in a for-loop (LRM 12.7.1)
-				c = skipPastMatch ("()");;
+				c = skipPastMatch ("()");
 				break;
 			case '{':
-				c = skipPastMatch ("{}");;
+				c = skipPastMatch ("{}");
 				break;
 			case '#':
 				c = skipDelay (token, c);

@@ -25,7 +25,7 @@ static void initializeManParser (const langType language)
 		"    /fill-end-of-scope {\n"
 		"         _scopetop pop exch\n"
 		"         % scope-top:int adjustment:int\n"
-		"         1 /start _matchloc _matchloc2line exch\n"
+		"         @1 _matchloc2line exch\n"
 		"         % scope-top:int line adjustment:int\n"
 		"         2 copy gt {\n"
 		"             sub end:\n"
@@ -262,6 +262,8 @@ extern parserDefinition* ManParser (void)
 
 	parserDefinition* const def = parserNew ("Man");
 
+	def->versionCurrent= 0;
+	def->versionAge    = 0;
 	def->enabled       = true;
 	def->extensions    = extensions;
 	def->patterns      = patterns;

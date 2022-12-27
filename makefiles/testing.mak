@@ -1,20 +1,33 @@
 # -*- makefile -*-
-.PHONY: check units fuzz noise tmain tinst tlib man-test clean-units clean-tlib clean-tmain clean-gcov clean-man-test run-gcov codecheck cppcheck dicts validate-input check-genfile
+.PHONY: check units fuzz noise tmain tinst tlib man-test clean-units clean-tlib clean-tmain clean-gcov clean-man-test run-gcov codecheck cppcheck dicts validate-input check-genfile tutil
 
 EXTRA_DIST += misc/units misc/units.py misc/man-test.py
 EXTRA_DIST += misc/tlib misc/mini-geany.expected
 MAN_TEST_TMPDIR = ManTest
 
-check: tmain units tlib man-test check-genfile
+check: tmain units tlib man-test check-genfile tutil
 
 # We may use CLEANFILES, DISTCLEANFILES, or etc.
-# clean-tlib and clean-gcov are not included
-clean-local: clean-units clean-tmain clean-man-test
+clean-local: clean-units clean-tmain clean-man-test clean-tlib clean-gcov
 
 CTAGS_TEST = ./ctags$(EXEEXT)
 READTAGS_TEST = ./readtags$(EXEEXT)
 MINI_GEANY_TEST = ./mini-geany$(EXEEXT)
 OPTSCRIPT_TEST = ./optscript$(EXEEXT)
+UTILTEST_TEST = ./utiltest$(EXEEXT)
+
+# Make these macros empty from make's command line
+# if you don't want to (re)build these executables
+# before testing.
+# e.g.
+#
+#    $ make units CTAGS_DEP=
+#
+CTAGS_DEP = $(CTAGS_TEST)
+READTAGS_DEP = $(READTAGS_TEST)
+MINI_GEANY_DEP = $(MINI_GEANY_TEST)
+OPTSCRIPT_DEP = $(OPTSCRIPT_TEST)
+UTILTEST_DEP = $(UTILTEST_TEST)
 
 if HAVE_TIMEOUT
 TIMEOUT = 1
@@ -40,7 +53,7 @@ V_RUN_0 = @echo "  RUN      $@";
 #
 # SHELL must be dash or bash.
 #
-fuzz: $(CTAGS_TEST)
+fuzz: $(CTAGS_DEP)
 	$(V_RUN) \
 	if test -n "$${ZSH_VERSION+set}"; then set -o SH_WORD_SPLIT; fi; \
 	if test x$(VG) = x1; then		\
@@ -56,7 +69,7 @@ fuzz: $(CTAGS_TEST)
 #
 # NOISE Target
 #
-noise: $(CTAGS_TEST)
+noise: $(CTAGS_DEP)
 	$(V_RUN) \
 	if test -n "$${ZSH_VERSION+set}"; then set -o SH_WORD_SPLIT; fi; \
 	if test x$(VG) = x1; then		\
@@ -72,7 +85,7 @@ noise: $(CTAGS_TEST)
 #
 # CHOP Target
 #
-chop: $(CTAGS_TEST)
+chop: $(CTAGS_DEP)
 	$(V_RUN) \
 	if test -n "$${ZSH_VERSION+set}"; then set -o SH_WORD_SPLIT; fi; \
 	if test x$(VG) = x1; then		\
@@ -84,7 +97,7 @@ chop: $(CTAGS_TEST)
 		$${VALGRIND} --run-shrink \
 		--with-timeout=$(TIMEOUT)"; \
 	$(SHELL) $${c} $(srcdir)/Units
-slap: $(CTAGS_TEST)
+slap: $(CTAGS_DEP)
 	$(V_RUN) \
 	if test -n "$${ZSH_VERSION+set}"; then set -o SH_WORD_SPLIT; fi; \
 	if test x$(VG) = x1; then		\
@@ -100,7 +113,7 @@ slap: $(CTAGS_TEST)
 #
 # UNITS Target
 #
-units: $(CTAGS_TEST)
+units: $(CTAGS_DEP)
 	$(V_RUN) \
 	if test -n "$${ZSH_VERSION+set}"; then set -o SH_WORD_SPLIT; fi; \
 	if test x$(VG) = x1; then		\
@@ -153,9 +166,6 @@ clean-units:
 validate-input:
 	$(V_RUN) \
 	if test -n "$${ZSH_VERSION+set}"; then set -o SH_WORD_SPLIT; fi; \
-	if test x$(VG) = x1; then		\
-		VALGRIND=--with-valgrind;	\
-	fi;					\
 	if test -n "$(VALIDATORS)"; then	\
 		VALIDATORS="--validators=$(VALIDATORS)"; \
 	fi; \
@@ -164,7 +174,7 @@ validate-input:
 #
 # Test main part, not parsers
 #
-tmain: $(CTAGS_TEST) $(READTAGS_TEST) $(OPTSCRIPT_TEST)
+tmain: $(CTAGS_DEP) $(READTAGS_DEP) $(OPTSCRIPT_DEP)
 	$(V_RUN) \
 	if test -n "$${ZSH_VERSION+set}"; then set -o SH_WORD_SPLIT; fi; \
 	if test x$(VG) = x1; then		\
@@ -207,7 +217,7 @@ clean-tmain:
 		$(SHELL) $(srcdir)/misc/units clean-tmain $$(pwd)/Tmain; \
 	fi
 
-tlib: $(MINI_GEANY_TEST)
+tlib: $(MINI_GEANY_DEP)
 	$(V_RUN) \
 	builddir=$$(pwd); \
 	mkdir -p $${builddir}/misc; \
@@ -216,12 +226,12 @@ tlib: $(MINI_GEANY_TEST)
 			$(srcdir)/misc/mini-geany.expected \
 			$${builddir}/misc/mini-geany.actual \
 			$(VG); then \
-			echo 'mini-geany: OK'; \
+			echo 'mini-geany: OK'; true; \
 		else \
-			echo 'mini-geany: FAILED'; \
+			echo 'mini-geany: FAILED'; false; \
 		fi; \
 	else \
-		echo 'mini-geany: SKIP'; \
+		echo 'mini-geany: SKIP'; true; \
 	fi
 clean-tlib:
 	$(SILENT) echo Cleaning libctags part tests
@@ -241,7 +251,7 @@ tinst:
 # Test readtags
 #
 if USE_READCMD
-roundtrip: $(READTAGS_TEST)
+roundtrip: $(READTAGS_DEP)
 	$(V_RUN) \
 	if ! test x$(CI) = x; then	\
 		ROUNDTRIP_FLAGS=--minitrip;			\
@@ -255,7 +265,7 @@ endif
 #
 # Checking code in ctags own rules
 #
-codecheck: $(CTAGS_TEST)
+codecheck: $(CTAGS_DEP)
 	$(V_RUN) $(SHELL) misc/src-check
 
 #
@@ -283,7 +293,7 @@ cppcheck:
 #
 # Testing examples in per-language man pages
 #
-man-test: $(CTAGS_TEST)
+man-test: $(CTAGS_DEP)
 	$(V_RUN) \
 	$(PYTHON) $(srcdir)/misc/man-test.py $(MAN_TEST_TMPDIR) $(CTAGS_TEST) $(srcdir)/man/ctags-lang-*.7.rst.in
 
@@ -346,10 +356,31 @@ endif
 		$(MAKE) -BC win32 ; \
 	fi
 	$(chkgen_verbose)if ! git diff --exit-code -- win32; then \
-		echo "Files under win32/ are not up to date." ; \
-		echo "Please execute 'make -BC win32' and commit them." ; \
-		exit 1 ; \
+		if test "$(SKIP_CHECKGEN_WIN32)" = "yes"; then \
+			echo "Skip checking the files under win32." ; \
+			exit 0 ; \
+		else \
+			echo "Files under win32/ are not up to date." ; \
+			echo "Please execute 'make -BC win32' and commit them." ; \
+			exit 1 ; \
+		fi \
 	else \
 		echo "Files under win32 are up to date." ; \
 	fi
 endif
+
+#
+# Test installation
+#
+tutil: $(UTILTEST_DEP)
+# See _VALGRIND_EXIT in misc/uints.py about 56.
+	$(V_RUN) vg=; \
+	if test x$(VG) = x1; then \
+		vg="valgrind "; \
+		vg="$$vg --leak-check=full"; \
+		vg="$$vg --track-origins=yes"; \
+		vg="$$vg --error-exitcode=56"; \
+	fi; \
+	\
+	builddir=$$(pwd); \
+	$$vg $$builddir/$(UTILTEST_TEST) -v

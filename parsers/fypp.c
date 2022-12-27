@@ -373,7 +373,7 @@ static void findFyppTags (void)
 	{
 		promise = makePromise (vStringValue(fyppGuestParser),
 							   1, 0,
-							   getInputLineNumber(), 0,
+							   getInputLineNumber(), EOL_CHAR_OFFSET,
 							   0);
 		if (promise >= 0)
 			promiseAttachLineFiller (promise, parseCtx.fypp_lines);
@@ -450,9 +450,10 @@ static void fyppSetGuestParser (const langType language CTAGS_ATTR_UNUSED,
 }
 
 static parameterHandlerTable FyppParameterHandlerTable [] = {
-	{ .name = "guest",
-	  .desc = "parser run after Fypp parser parses the original input (\"NONE\" or a parser name [Fortran])" ,
-	  .handleParameter = fyppSetGuestParser,
+	{
+		.name = "guest",
+		.desc = "parser run after Fypp parser parses the original input (\"NONE\" or a parser name [Fortran])" ,
+		.handleParameter = fyppSetGuestParser,
 	},
 };
 

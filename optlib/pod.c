@@ -92,7 +92,7 @@ extern parserDefinition* PodParser (void)
 		"{{\n"
 		"    \\2\n"
 		"    kindTable \\1 tolevel get\n"
-		"    2 /start _matchloc\n"
+		"    @2\n"
 		"    _tag _commit\n"
 		"    dup :line 1 sub \\1 tolevel scopePopUpTo\n"
 		"    _scopetop {\n"
@@ -106,6 +106,8 @@ extern parserDefinition* PodParser (void)
 
 	parserDefinition* const def = parserNew ("Pod");
 
+	def->versionCurrent= 0;
+	def->versionAge    = 0;
 	def->enabled       = true;
 	def->extensions    = extensions;
 	def->patterns      = patterns;

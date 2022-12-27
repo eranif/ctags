@@ -8,10 +8,10 @@ jobs:
   #
   # We assume GNU Make is available.
   #
-   fedora34_gmake:
+   fedora36_gmake:
      working_directory: ~/universal-ctags
      docker:
-       - image: docker.io/fedora:34
+       - image: docker.io/fedora:36
      steps:
        - run:
            name: Install Git, Gdb and Procps-NG
@@ -39,10 +39,10 @@ jobs:
              cd docs
              make html
 
-   fedora34_gmake_roundtrip:
+   fedora36_gmake_roundtrip:
      working_directory: ~/universal-ctags
      docker:
-       - image: docker.io/fedora:34
+       - image: docker.io/fedora:36
      steps:
        - run:
            name: Install Git and Gdb
@@ -91,10 +91,10 @@ jobs:
              dnf -y install git gdb
        - checkout
        - run:
-           name: Install build tools
+           name: Install packages for building ctags and validating test input files
            command: |
              dnf -y install gcc automake autoconf pkgconfig bmake libseccomp-devel libxml2-devel jansson-devel libyaml-devel pcre2-devel findutils sudo
-             dnf -y install jq puppet
+             dnf -y install g++ jq puppet node
        - run:
            name: Build
            command: |
@@ -132,10 +132,10 @@ jobs:
            command: |
              MAKE=bmake bmake roundtrip
 
-   fedora34_distcheck:
+   fedora36_distcheck:
      working_directory: ~/universal-ctags
      docker:
-       - image: docker.io/fedora:34
+       - image: docker.io/fedora:36
      steps:
        - run:
            name: Install Git, Gdb and Procps-NG
@@ -186,7 +186,7 @@ jobs:
        - run:
            name: Install build tools
            command: |
-              yum -y --enablerepo=ubi-8-appstream --enablerepo=ubi-8-baseos --enablerepo=ubi-8-codeready-builder install python3 gcc automake autoconf pkgconfig make libxml2-devel libyaml-devel pcre2-devel findutils diffutils sudo
+              yum -y --enablerepo=ubi-8-appstream-rpms --enablerepo=ubi-8-baseos-rpms --enablerepo=ubi-8-codeready-builder-rpms install python3 gcc automake autoconf pkgconfig make libxml2-devel libyaml-devel pcre2-devel findutils diffutils sudo
        - run:
            name: Build
            command: |
@@ -211,7 +211,7 @@ jobs:
        - run:
            name: Install build tools
            command: |
-              yum -y --enablerepo=ubi-8-appstream --enablerepo=ubi-8-baseos --enablerepo=ubi-8-codeready-builder install python3 gcc automake autoconf pkgconfig make libxml2-devel libyaml-devel pcre2-devel findutils diffutils sudo
+              yum -y --enablerepo=ubi-8-appstream-rpms --enablerepo=ubi-8-baseos-rpms --enablerepo=ubi-8-codeready-builder-rpms install python3 gcc automake autoconf pkgconfig make libxml2-devel libyaml-devel pcre2-devel findutils diffutils sudo
        - run:
            name: Build
            command: |
@@ -245,7 +245,7 @@ jobs:
        - run:
            name: Test
            command: |
-             make check
+             make check SKIP_CHECKGEN_WIN32=yes
 
    centos7_make_roundtrip:
      working_directory: ~/universal-ctags
@@ -381,13 +381,13 @@ workflows:
     jobs:
       - ubuntu20_32bit
       - fedora30_bmake
-      - fedora34_distcheck
+      - fedora36_distcheck
       - ubi8_make
-      - fedora34_gmake
+      - fedora36_gmake
       - fedora33_cross_aarch64
       - centos7_make
       - ubuntu20_mingw
       - ubi8_make_roundtrip
       - fedora30_bmake_roundtrip
-      - fedora34_gmake_roundtrip
+      - fedora36_gmake_roundtrip
       - centos7_make_roundtrip

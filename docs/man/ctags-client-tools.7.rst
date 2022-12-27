@@ -6,7 +6,7 @@ ctags-client-tools
 
 Hints for developing a tool using ctags command and tags output
 
-:Version: 5.9.0
+:Version: 6.0.0
 :Manual group: Universal Ctags
 :Manual section: 7
 
@@ -43,7 +43,7 @@ An example of a pseudo tag::
 
 	!_TAG_PROGRAM_NAME	Universal Ctags	/Derived from Exuberant Ctags/
 
-The value, "2", associated with the pseudo tag "TAG_PROGRAM_NAME", is
+The value, "Universal Ctags", associated with the pseudo tag ``TAG_PROGRAM_NAME``, is
 used in the field for input file. The description, "Derived from
 Exuberant Ctags", is used in the field for pattern.
 
@@ -63,7 +63,7 @@ This pseudo-tag says "the function kind of C language is enabled
 when generating this tags file." ``--pseudo-tags`` is the option for
 enabling/disabling individual pseudo-tags. When enabling/disabling a
 pseudo tag with the option, specify the tag name only
-"TAG_KIND_DESCRIPTION", without the prefix ("!_") or the suffix ("!C").
+``TAG_KIND_DESCRIPTION``, without the prefix ("!_") or the suffix ("!C").
 
 
 Options for Pseudo-tags
@@ -107,7 +107,7 @@ Options for Pseudo-tags
 
 		!_TAG_PROGRAM_NAME	Universal Ctags	/Derived from Exuberant Ctags/	extras:pseudo
 
-	If the name of a normal tag in a tag file starts with "!_", a
+	If the name of a regular tag in a tag file starts with "!_", a
 	client tool cannot distinguish whether the tag is a regular-tag or
 	pseudo-tag.  The fields attached with this option help the tool
 	distinguish them.
@@ -142,6 +142,8 @@ for using notable ones.
 	A client tool can know "{anonymous}", "{fileScope}", "{pseudo}",
 	and "{subparser}" extras are enabled from the output.
 
+	Universal Ctags version 6.0 will turn on this pseudo tag by default.
+
 ``TAG_FIELD_DESCRIPTION``  (new in Universal Ctags)
 	Indicates the names and descriptions of enabled fields::
 
@@ -168,6 +170,8 @@ for using notable ones.
 	and "{typeref}" fields are enabled from the output.
 	The fields are common in languages. In addition to the common fields,
 	the tool can known "{macrodef}" field of C language is also enabled.
+
+	Universal Ctags version 6.0 will turn on this pseudo tag by default.
 
 ``TAG_FILE_ENCODING``  (new in Universal Ctags)
 	TBW
@@ -202,6 +206,8 @@ for using notable ones.
 	A client tool can know "{function}", "{member}", and "{variable}"
 	kinds of C language are enabled from the output.
 
+	Universal Ctags version 6.0 will turn on this pseudo tag by default.
+
 ``TAG_KIND_SEPARATOR`` (new in Universal Ctags)
 	TBW
 
@@ -213,6 +219,43 @@ for using notable ones.
 
 ``TAG_OUTPUT_MODE`` (new in Universal Ctags)
 	TBW
+
+``TAG_OUTPUT_VERSION`` (new in Universal Ctags 6.0)
+    Indicates the language-common interface version of the output::
+
+	  !_TAG_OUTPUT_VERSION	{current}.{age}	/.../
+
+	The public interface includes common fields, common extras,
+	pseudo tags.
+
+	The maintainer of Universal Ctags may update the numbers,
+	"{current}" and "{age}" in the same manner as explained
+	in ``TAG_PARSER_VERSION``.
+
+``TAG_PARSER_VERSION`` (new in Universal Ctags 6.0)
+	Indicates the interface version of the parser::
+
+	  !_TAG_PARSER_VERSION!{language-name}	{current}.{age}	/.../
+
+	The public interfaces include kinds, roles, language specific fields,
+	and language specific extras.
+
+	The maintainer of the parser for "${language-name}" may update
+	the numbers, "{current}" and "{age}" in the following rules:
+
+	* If kinds, roles, language specific fields, and/or language
+	  specific extras have been added, removed or changed since last
+	  release, increment "{current}".
+	* If they have been added since last release, increment "{age}".
+	* If they have been removed since last release, set "{age}" to 0.
+
+	This concept is baesd on the versioning in **libtool**
+	(`7.2 Libtool’s versioning system <https://www.gnu.org/software/libtool/manual/libtool.html#Libtool-versioning>`_.)
+	In Universal Ctags, we simplified the concept with removing
+	"revision" in the versioning in libtool.
+
+	Manual pages for languages may document changes that increase
+	the number of "{current}".
 
 ``TAG_PATTERN_LENGTH_LIMIT`` (new in Universal Ctags)
 	TBW
@@ -239,7 +282,10 @@ for using notable ones.
 	``TAG_PROC_CWD`` gives the tool a hint; "input.c" may be at "/tmp".
 
 ``TAG_PROGRAM_NAME``
-	TBW
+	Indicates the name of program generating this tags file.
+
+``TAG_PROGRAM_VERSION``
+	Indicates the version of program generating this tags file.
 
 ``TAG_ROLE_DESCRIPTION`` (new in Universal Ctags)
 	Indicates the names and descriptions of enabled roles::
@@ -287,19 +333,28 @@ example, when searching for a tag that matches ``a\?b``, if using a filter
 expression like ``'(eq? $name "a\?b")'``, since ``\?`` is translated into a
 single ``?`` by readtags, it actually searches for ``a?b``.
 
-Another problem is if a single quote appear in filter expressions (which is
-also wrapped by single quotes), it terminates the expression, producing broken
-expressions, and may even cause unintended shell injection. Single quotes can
-be escaped using ``'"'"'``.
+Another problem is: If the client tools talks to readtags not by subprocess
+directly, but through a shell, then if a single quote appear in filter
+expressions (which is also wrapped by single quotes), it terminates the
+expression, producing broken expressions, and may even cause unintended shell
+injection. Single quotes can be escaped using ``'"'"'``.
 
 So, client tools need to:
 
 * Replace ``\`` by ``\\``
-* Replace ``'`` by ``'"'"'``
+* Replace ``'`` by ``'"'"'``, if it talks to readtags through a shell.
 
 inside the expressions. If the expression also contains strings, ``"`` in the
 strings needs to be replaced by ``\"``.
 
+Another thing to notice is that missing fields are represented by ``#f``, and
+applying string operators to them will produce an error. You should always
+check if a field is missing before applying string operators. See the
+"Filtering" section in :ref:`readtags(1) <readtags(1)>` to know how to do this. Run "readtags -H
+filter" to see which operators take string arguments.
+
+Build Filter/Sorter Expressions using Lisp Languages
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Client tools written in Lisp could build the expression using lists. ``prin1``
 (in Common Lisp style Lisps) and ``write`` (in Scheme style Lisps) can
 translate the list into a string that can be directly used. For example, in
@@ -311,11 +366,13 @@ EmacsLisp:
      (prin1 `(eq? $name ,name)))
    => "(eq\\? $name "hi")"
 
-The "?" is escaped, and readtags can handle it. Scheme style Lisps should do
-proper escaping so the expression readtags gets is just the expression passed
-into ``write``. Common Lisp style Lisps may produce unrecognized escape
-sequences by readtags, like ``\#``. Readtags provides some aliases for these
-Lisps:
+The "?" is escaped, and readtags can handle it.
+
+Escape sequences produced by ``write`` in Scheme style Lisps are exactly those
+supported by readtags, so any legal readtags expressions can be used. Common
+Lisp style Lisps may produce escape sequences that are unrecgonized by
+readtags, like ``\#``, so symbols that contain "#" can't be used. Readtags
+provides some aliases for these Lisps, so they should:
 
 * Use ``true`` for ``#t``.
 * Use ``false`` for ``#f``.
@@ -324,14 +381,9 @@ Lisps:
   ``(string->regexp "PATTERN" :case-fold true)`` for ``#/PATTERN/i``. Notice
   that ``string->regexp`` doesn't require escaping "/" in the pattern.
 
-Notice that even when the client tool uses this method, ``'`` still needs to be
-replaced by ``'"'"'`` to prevent broken expressions and shell injection.
-
-Another thing to notice is that missing fields are represented by ``#f``, and
-applying string operators to them will produce an error. You should always
-check if a field is missing before applying string operators. See the
-"Filtering" section in :ref:`readtags(1) <readtags(1)>` to know how to do this. Run "readtags -H
-filter" to see which operators take string arguments.
+Notice that if the client tool talks to readtags through a shell, then in the
+produced string, ``'`` still needs to be replaced by ``'"'"'`` to prevent
+broken expressions and shell injection.
 
 Parse Readtags Output
 ~~~~~~~~~~~~~~~~~~~~~
@@ -361,11 +413,11 @@ Client tools could split the line using the following steps:
   * If a ``?`` follows, then the pattern delimiter is ``?``.
   * If a number follows, then:
 
-    * If a ``;/`` follows the number, then the delimiter is ``/``.
-    * If a ``;?`` follows the number, then the delimiter is ``?``.
-    * If a ``;"`` follows the number, then the field uses only line number, and
-      there's no pattern delimiter (since there's no regex pattern). In this
-      case the pattern field ends at the 3rd tab.
+	* If a ``;/`` follows the number, then the delimiter is ``/``.
+	* If a ``;?`` follows the number, then the delimiter is ``?``.
+	* If a ``;"`` follows the number, then the field uses only line number, and
+	  there's no pattern delimiter (since there's no regex pattern). In this
+	  case the pattern field ends at the 3rd tab.
 
 * After the opening delimiter, find the next unescaped pattern delimiter, and
   that's the closing delimiter. It will be followed by ``;"`` and then a tab.
@@ -464,82 +516,18 @@ nearest occurrence from the line" gives good result on both schemes.
 
 JSON OUTPUT
 -----------
-Universal Ctags supports `JSON <https://www.json.org/>`_ (strictly
-speaking `JSON Lines <https://jsonlines.org/>`_) output format if the
-ctags executable is built with ``libjansson``.  JSON output goes to
-standard output by default.
+See :ref:`ctags-json-output(5) <ctags-json-output(5)>`.
 
-Format
-~~~~~~
-Each JSON line represents a tag.
+CHANGES
+-----------
 
-.. code-block:: console
-
-	$ ctags --extras=+p --output-format=json --fields=-s input.py
-	{"_type": "ptag", "name": "JSON_OUTPUT_VERSION", "path": "0.0", "pattern": "in development"}
-	{"_type": "ptag", "name": "TAG_FILE_SORTED", "path": "1", "pattern": "0=unsorted, 1=sorted, 2=foldcase"}
-	...
-	{"_type": "tag", "name": "Klass", "path": "/tmp/input.py", "pattern": "/^class Klass:$/", "language": "Python", "kind": "class"}
-	{"_type": "tag", "name": "method", "path": "/tmp/input.py", "pattern": "/^    def method(self):$/", "language": "Python", "kind": "member", "scope": "Klass", "scopeKind": "class"}
-	...
-
-A key not starting with ``_`` is mapped to a field of ctags.
-"``--output-format=json --list-fields``" options list the fields.
-
-A key starting with ``_`` represents meta information of the JSON
-line.  Currently only ``_type`` key is used. If the value for the key
-is ``tag``, the JSON line represents a normal tag. If the value is
-``ptag``, the line represents a pseudo-tag.
-
-The output format can be changed in the
-future. ``JSON_OUTPUT_VERSION`` pseudo-tag provides a change
-client-tools to handle the changes.  Current version is "0.0". A
-client-tool can extract the version with ``path`` key from the
-pseudo-tag.
-
-The JSON output format is newly designed and has no limitation found
-in the default tags file format.
-
-* The values for ``kind`` key are represented in long-name flags.
-  No one-letter is here.
-
-* Scope names and scope kinds have distinguished keys: ``scope`` and ``scopeKind``.
-  They are combined in the default tags file format.
-
-Data type used in a field
-~~~~~~~~~~~~~~~~~~~~~~~~~
-Values for the most of all keys are represented in JSON string type.
-However, some of them are represented in string, integer, and/or boolean type.
-
-"``--output-format=json --list-fields``" options show What kind of data type
-used in a field of JSON.
-
-.. code-block:: console
-
-	$ ctags --output-format=json --list-fields
-	#LETTER NAME           ENABLED LANGUAGE         JSTYPE FIXED DESCRIPTION
-	F       input          yes     NONE             s--    no    input file
-	...
-	P       pattern        yes     NONE             s-b    no    pattern
-	...
-	f       file           yes     NONE             --b    no    File-restricted scoping
-	...
-	e       end            no      NONE             -i-    no    end lines of various items
-	...
-
-``JSTYPE`` column shows the data types.
-
-'``s``'
-	string
-
-'``i``'
-	integer
-
-'``b``'
-	boolean (true or false)
-
-For an example, the value for ``pattern`` field of ctags takes a string or a boolean value.
+Version 6.0
+~~~~~~~~~~~
+* ctags enables ``TAG_KIND_DESCRIPTION``, ``TAG_ROLE_DESCRIPTION``,
+  ``TAG_FIELD_DESCRIPTION``, and ``TAG_EXTRA_DESCRIPTION`` pseudo tags by default.
+* ``TAG_PARSER_VERSION`` is introduced.
 
 SEE ALSO
 --------
-:ref:`ctags(1) <ctags(1)>`, :ref:`ctags-lang-python(7) <ctags-lang-python(7)>`, :ref:`ctags-incompatibilities(7) <ctags-incompatibilities(7)>`, :ref:`tags(5) <tags(5)>`, :ref:`readtags(1) <readtags(1)>`
+:ref:`ctags(1) <ctags(1)>`, :ref:`ctags-lang-python(7) <ctags-lang-python(7)>`, :ref:`ctags-incompatibilities(7) <ctags-incompatibilities(7)>`, :ref:`tags(5) <tags(5)>`, :ref:`ctags-json-output(5) <ctags-json-output(5)>`, :ref:`readtags(1) <readtags(1)>`,
+`7.2 Libtool’s versioning system <https://www.gnu.org/software/libtool/manual/libtool.html#Libtool-versioning>`

@@ -162,6 +162,8 @@ static kindDefinition defaultFileKind = {
 	.description = KIND_FILE_DEFAULT_NAME,
 };
 
+static langType ctagsSelfTestLang;
+
 /*
 *   FUNCTION DEFINITIONS
 */
@@ -783,6 +785,24 @@ static vString* extractInterpreter (MIO* input)
 	return interpreter;
 }
 
+static bool isShellZsh (const char *p)
+{
+	p = strstr (p, "sh-set-shell");
+	if (!p)
+		return false;
+	p += strlen("sh-set-shell");
+
+	if (*p == ':')
+		p++;
+	while (isspace ((int) *p))
+		p++;
+
+	if (strncmp (p, "\"zsh\"", 5) == 0
+		|| strncmp (p, "zsh", 3) == 0)
+		return true;
+	return false;
+}
+
 static vString* determineEmacsModeAtFirstLine (const char* const line)
 {
 	vString* mode = vStringNew ();
@@ -803,6 +823,11 @@ static vString* determineEmacsModeAtFirstLine (const char* const line)
 			;  /* no-op */
 		for ( ;  *p != '\0'  &&  isLanguageNameChar ((int) *p)  ;  ++p)
 			vStringPut (mode, (int) *p);
+
+		if ((strcmp(vStringValue (mode), "sh") == 0
+			 || strcmp(vStringValue (mode), "shell-script") == 0)
+			&& isShellZsh (p))
+			vStringCopyS (mode, "Zsh");
 	}
 	else
 	{
@@ -852,6 +877,7 @@ static vString* determineEmacsModeAtEOF (MIO* const fp)
 	bool headerFound = false;
 	const char* p;
 	vString* mode = vStringNew ();
+	bool is_shell_mode = false;
 
 	while ((line = readLineRaw (vLine, fp)) != NULL)
 	{
@@ -865,11 +891,22 @@ static vString* determineEmacsModeAtEOF (MIO* const fp)
 				;  /* no-op */
 			for ( ;  *p != '\0'  &&  isLanguageNameChar ((int) *p)  ;  ++p)
 				vStringPut (mode, (int) *p);
+
+			is_shell_mode = ((strcasecmp (vStringValue (mode), "sh") == 0
+								 || strcasecmp (vStringValue (mode), "shell-script") == 0));
 		}
 		else if (headerFound && (p = strstr(line, "End:")))
 			headerFound = false;
 		else if (strstr (line, "Local Variables:"))
 			headerFound = true;
+		else if (is_shell_mode && (p = strstr (line, "sh-set-shell")))
+		{
+			p += strlen("sh-set-shell");
+			while (isspace ((int) *p))
+				p++;
+			if (strncmp (p, "\"zsh\"", 5) == 0)
+				vStringCopyS (mode, "Zsh");
+		}
 	}
 	vStringDelete (vLine);
 	return mode;
@@ -923,7 +960,7 @@ static vString* determineVimFileType (const char *const modeline)
 	return filetype;
 }
 
-static vString* extractVimFileType(MIO* input)
+static vString* extractVimFileTypeCommon(MIO* input, bool eof)
 {
 	/* http://vimdoc.sourceforge.net/htmldoc/options.html#modeline
 
@@ -951,7 +988,14 @@ static vString* extractVimFileType(MIO* input)
 	i = 0;
 	while ((readLineRaw (ring[i++], input)) != NULL)
 		if (i == RING_SIZE)
+		{
 			i = 0;
+			if (!eof)
+			{
+				i++;
+				break;
+			}
+		}
 
 	j = i;
 	do
@@ -986,6 +1030,16 @@ static vString* extractVimFileType(MIO* input)
 
 	/* TODO:
 	   [text]{white}{vi:|vim:|ex:}[white]{options} */
+}
+
+static vString* extractVimFileTypeAtBOF(MIO* input)
+{
+	return extractVimFileTypeCommon (input, false);
+}
+
+static vString* extractVimFileTypeAtEOF(MIO* input)
+{
+	return extractVimFileTypeCommon (input, true);
 }
 
 static vString* extractMarkGeneric (MIO* input,
@@ -1081,32 +1135,36 @@ struct getLangCtx {
 
 static const struct taster {
 	vString* (* taste) (MIO *);
-        const char     *msg;
+	const char     *msg;
 } eager_tasters[] = {
-        {
+	{
 		.taste  = extractInterpreter,
 		.msg    = "interpreter",
-        },
+	},
 	{
 		.taste  = extractZshAutoloadTag,
 		.msg    = "zsh autoload tag",
 	},
-        {
+	{
 		.taste  = extractEmacsModeAtFirstLine,
 		.msg    = "emacs mode at the first line",
-        },
-        {
+	},
+	{
 		.taste  = extractEmacsModeLanguageAtEOF,
 		.msg    = "emacs mode at the EOF",
-        },
-        {
-		.taste  = extractVimFileType,
-		.msg    = "vim modeline",
-        },
-		{
+	},
+	{
+		.taste  = extractVimFileTypeAtBOF,
+		.msg    = "vim modeline at the BOF",
+	},
+	{
+		.taste  = extractVimFileTypeAtEOF,
+		.msg    = "vim modeline at the EOF",
+	},
+	{
 		.taste  = extractPHPMark,
 		.msg    = "PHP marker",
-		}
+	}
 };
 static langType tasteLanguage (struct getLangCtx *glc, const struct taster *const tasters, int n_tasters,
 			      langType *fallback);
@@ -2053,9 +2111,12 @@ extern void enableDefaultFileKind (bool state)
 */
 struct preLangDefFlagData
 {
+	const char *const name;
 	char *base;
 	subparserRunDirection direction;
 	bool autoFQTag;
+	unsigned int versionCurrent;
+	unsigned int versionAge;
 };
 
 static void pre_lang_def_flag_base_long (const char* const optflag, const char* const param, void* data)
@@ -2115,6 +2176,30 @@ static void pre_lang_def_flag_autoFQTag_long (const char* const optflag,
 	flag_data->autoFQTag = true;
 }
 
+static void pre_lang_def_flag_version_long (const char* const optflag CTAGS_ATTR_UNUSED,
+											const char* const param,
+											void* data)
+{
+	struct preLangDefFlagData * flag_data = data;
+	char * verstr = eStrdup (param);
+	char * age = strchr(verstr, '.');
+	if (!age)
+		error (FATAL, "Faile to parse the version number ('.') for language \"%s\": %s",
+			   flag_data->name, param);
+	*age = '\0';
+	age++;
+
+	if (!strToUInt (verstr, 10, &flag_data->versionCurrent))
+		error (FATAL, "Faile to parse the version number (the current part) for language \"%s\": %s",
+			   flag_data->name, param);
+
+	if (!strToUInt (age, 10, &flag_data->versionAge))
+		error (FATAL, "Faile to parse the version number (the age part) for language \"%s\": %s",
+			   flag_data->name, param);
+
+	eFree (verstr);
+}
+
 static flagDefinition PreLangDefFlagDef [] = {
 	{ '\0',  "base", NULL, pre_lang_def_flag_base_long,
 	  "BASEPARSER", "utilize as a base parser"},
@@ -2131,6 +2216,8 @@ static flagDefinition PreLangDefFlagDef [] = {
 	},
 	{ '\0',  "_autoFQTag", NULL, pre_lang_def_flag_autoFQTag_long,
 	  NULL, "make full qualified tags automatically based on scope information"},
+	{ '\0', "version",     NULL, pre_lang_def_flag_version_long,
+	  NULL, "set the version of the parser (current.age)"},
 };
 
 static void optlibFreeDep (langType lang, bool initialized CTAGS_ATTR_UNUSED)
@@ -2203,7 +2290,13 @@ extern void processLanguageDefineOption (
 	else if (strcmp(name, RSV_LANG_ALL) == 0)
 	{
 		eFree (name);
-		error (FATAL, "\"all\" is reserved; don't use it as the name for defining a new language");
+		error (FATAL, "\"" RSV_LANG_ALL "\" is reserved; don't use it as the name for defining a new language");
+	}
+	else if (strcmp(name, RSV_NONE) == 0)
+	{
+		eFree (name);
+		error (FATAL, "\"" RSV_NONE "\" is reserved; don't use it as the name for defining a new language");
+
 	}
 	else if ((unacceptable = strpbrk (name, "!\"$%&'()*,-./:;<=>?@[\\]^`|~")))
 	{
@@ -2223,9 +2316,12 @@ extern void processLanguageDefineOption (
 	memset (LanguageTable + LanguageCount, 0, sizeof(parserObject));
 
 	struct preLangDefFlagData data = {
+		.name = name,
 		.base = NULL,
 		.direction = SUBPARSER_UNKNOWN_DIRECTION,
 		.autoFQTag = false,
+		.versionCurrent = 0,
+		.versionAge = 0,
 	};
 	flagsEval (flags, PreLangDefFlagDef, ARRAY_SIZE (PreLangDefFlagDef), &data);
 
@@ -2240,6 +2336,8 @@ extern void processLanguageDefineOption (
 		eFree (data.base);
 
 	def->requestAutomaticFQTag = data.autoFQTag;
+	def->versionCurrent = data.versionCurrent;
+	def->versionAge = data.versionAge;
 
 	initializeParsingCommon (def, false);
 	linkDependenciesAtInitializeParsing (def);
@@ -3522,7 +3620,7 @@ static void aliasColprintAddLanguage (struct colprintTable * table,
 		for (unsigned int i = 0; i < count; i++)
 		{
 			struct colprintLine * line = colprintTableGetNewLine (table);
-			vString *alias = stringListItem (parser->currentAliases, i);;
+			vString *alias = stringListItem (parser->currentAliases, i);
 
 			colprintLineAppendColumnCString (line, parser->def->name);
 			colprintLineAppendColumnVString (line, alias);
@@ -4663,6 +4761,13 @@ extern bool makeKindDescriptionsPseudoTags (const langType language,
 			continue;
 
 		kind = getKind (kcb, i);
+		if (language == ctagsSelfTestLang
+			&& (kind == NULL || kind->name == NULL))
+		{
+			/* The Self test parser may have broken kinds.
+			 * Let's skip it. */
+			continue;
+		}
 		makeKindDescriptionPseudoTag (kind, &data);
 	}
 
@@ -4784,6 +4889,26 @@ extern bool makeRoleDescriptionsPseudoTags (const langType language,
 	}
 
 	return data.written;
+}
+
+extern unsigned int getLanguageVersionCurrent (const langType language)
+{
+	parserObject *parser;
+	parserDefinition* lang;
+	Assert (0 <= language  &&  language < (int) LanguageCount);
+	parser = LanguageTable + language;
+	lang = parser->def;
+	return lang->versionCurrent;
+}
+
+extern unsigned int getLanguageVersionAge (const langType language)
+{
+	parserObject *parser;
+	parserDefinition* lang;
+	Assert (0 <= language  &&  language < (int) LanguageCount);
+	parser = LanguageTable + language;
+	lang = parser->def;
+	return lang->versionAge;
 }
 
 /*
@@ -5532,6 +5657,11 @@ static void printStatsCTST (langType lang CTAGS_ATTR_UNUSED)
 			 CTST_num_handled_char);
 }
 
+static void initCTST (langType language)
+{
+	ctagsSelfTestLang = language;
+}
+
 static parserDefinition *CTagsSelfTestParser (void)
 {
 	static const char *const extensions[] = { NULL };
@@ -5540,6 +5670,7 @@ static parserDefinition *CTagsSelfTestParser (void)
 	def->kindTable = CTST_Kinds;
 	def->kindCount = KIND_COUNT;
 	def->parser = createCTSTTags;
+	def->initialize = initCTST;
 	def->invisible = true;
 	def->useMemoryStreamInput = true;
 	def->useCork = CORK_QUEUE;

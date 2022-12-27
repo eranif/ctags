@@ -102,6 +102,9 @@
     <ClCompile Include="..\main\fmt.c">
       <Filter>Source Files\main</Filter>
     </ClCompile>
+    <ClCompile Include="..\main\fname.c">
+      <Filter>Source Files\main</Filter>
+    </ClCompile>
     <ClCompile Include="..\main\htable.c">
       <Filter>Source Files\main</Filter>
     </ClCompile>
@@ -225,6 +228,9 @@
     <ClCompile Include="..\optlib\gdbinit.c">
       <Filter>Source Files\optlib</Filter>
     </ClCompile>
+    <ClCompile Include="..\optlib\gperf.c">
+      <Filter>Source Files\optlib</Filter>
+    </ClCompile>
     <ClCompile Include="..\optlib\iPythonCell.c">
       <Filter>Source Files\optlib</Filter>
     </ClCompile>
@@ -307,6 +313,9 @@
       <Filter>Source Files\parsers</Filter>
     </ClCompile>
     <ClCompile Include="..\parsers\basic.c">
+      <Filter>Source Files\parsers</Filter>
+    </ClCompile>
+    <ClCompile Include="..\parsers\bats.c">
       <Filter>Source Files\parsers</Filter>
     </ClCompile>
     <ClCompile Include="..\parsers\beta.c">
@@ -677,6 +686,9 @@
     <ClInclude Include="..\main\fmt_p.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\main\fname.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="..\main\gcc-attr.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -888,6 +900,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\parsers\ruby.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\parsers\sh.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\parsers\tcl.h">

@@ -8,6 +8,7 @@
 
 #include "general.h"
 
+#include "ctags.h"
 #include "readtags.h"
 #include "printtags.h"
 #include "routines.h"
@@ -107,35 +108,20 @@ static tagEntry *copyTag (tagEntry *o)
 {
 	tagEntry *n;
 
-	n = calloc (1, sizeof  (*o));
-	if (!n)
-		perror (__FUNCTION__);
+	n = eCalloc (1, sizeof  (*o));
 
-	n->name = strdup (o->name);
-
-	if (!n->name)
-		perror (__FUNCTION__);
+	n->name = eStrdup (o->name);
 
 	if (o->file)
-		n->file = strdup (o->file);
-	if (o->file && !n->file)
-		perror (__FUNCTION__);
+		n->file = eStrdup (o->file);
 
 	if (o->address.pattern)
-	{
-		n->address.pattern = strdup (o->address.pattern);
-		if (!n->address.pattern)
-			perror (__FUNCTION__);
-	}
+		n->address.pattern = eStrdup (o->address.pattern);
 
 	n->address.lineNumber = o->address.lineNumber;
 
 	if (o->kind)
-	{
-		n->kind = strdup (o->kind);
-		if (!n->kind)
-			perror (__FUNCTION__);
-	}
+		n->kind = eStrdup (o->kind);
 
 	n->fileScope = o->fileScope;
 	n->fields.count = o->fields.count;
@@ -143,19 +129,12 @@ static tagEntry *copyTag (tagEntry *o)
 	if (o->fields.count == 0)
 		return n;
 
-	n->fields.list = malloc (o->fields.count *sizeof (*o->fields.list));
-	if (!n->fields.list)
-		perror (__FUNCTION__);
+	n->fields.list = eMalloc (o->fields.count * sizeof (*o->fields.list));
 
 	for (unsigned short c = 0; c < o->fields.count; c++)
 	{
-		n->fields.list[c].key = strdup (o->fields.list[c].key);
-		if (!n->fields.list[c].key)
-			perror (__FUNCTION__);
-
-		n->fields.list[c].value = strdup (o->fields.list[c].value);
-		if (!n->fields.list[c].value)
-			perror (__FUNCTION__);
+		n->fields.list[c].key = eStrdup (o->fields.list[c].key);
+		n->fields.list[c].value = eStrdup (o->fields.list[c].value);
 	}
 
 	return n;
@@ -172,15 +151,11 @@ struct tagEntryArray {
 
 struct tagEntryArray *tagEntryArrayNew (void)
 {
-	struct tagEntryArray * a = malloc (sizeof (struct tagEntryArray));
-	if (!a)
-		perror(__FUNCTION__);
+	struct tagEntryArray * a = eMalloc (sizeof (struct tagEntryArray));
 
 	a->count = 0;
 	a->length = 1024;
-	a->a = malloc(a->length * sizeof (a->a[0]));
-	if (!a->a)
-		perror(__FUNCTION__);
+	a->a = eMalloc(a->length * sizeof (a->a[0]));
 
 	return a;
 }
@@ -189,13 +164,12 @@ void tagEntryArrayPush (struct tagEntryArray *a, tagEntry *e)
 {
 	if (a->count + 1 == a->length)
 	{
-		if (a->length * 2 < a->length)
-			perror("Too large array allocation");
+		if (a->length * 2 < a->length) {
+			fprintf(stderr, "too large array allocation");
+			exit(1);
+		}
 
-		struct tagEntryHolder *tmp = realloc (a->a, sizeof (a->a[0]) * (a->length * 2));
-		if (!tmp)
-			perror(__FUNCTION__);
-
+		struct tagEntryHolder *tmp = eRealloc (a->a, sizeof (a->a[0]) * (a->length * 2));
 		a->a = tmp;
 		a->length *= 2;
 	}
@@ -363,6 +337,7 @@ static void findTag (const char *const name, const int options)
 {
 	tagFileInfo info;
 	tagEntry entry;
+	int err = 0;
 	tagFile *const file = openTags (TagFileName, &info);
 	if (file == NULL || !info.status.opened)
 	{
@@ -372,45 +347,43 @@ static void findTag (const char *const name, const int options)
 			tagsClose (file);
 		exit (1);
 	}
-	else
+
+	if (SortOverride)
 	{
-		int err = 0;
-		if (SortOverride)
+		if (tagsSetSortType (file, SortMethod) != TagSuccess)
 		{
-			if (tagsSetSortType (file, SortMethod) != TagSuccess)
-			{
-				err = tagsGetErrno (file);
-				fprintf (stderr, "%s: cannot set sort type to %d: %s\n",
-						 ProgramName,
-						 SortMethod,
-						 tagsStrerror (err));
-				exit (1);
-			}
-		}
-		if (debugMode)
-			fprintf (stderr, "%s: searching for \"%s\" in \"%s\"\n",
-					 ProgramName, name, TagFileName);
-		if (tagsFind (file, &entry, name, options) == TagSuccess)
-			walkTags (file, &entry, tagsFindNext,
-#ifdef READTAGS_DSL
-					  Formatter? printTagWithFormatter:
-#endif
-					  printTag);
-		else if ((err = tagsGetErrno (file)) != 0)
-		{
-			fprintf (stderr, "%s: error in tagsFind(): %s\n",
+			err = tagsGetErrno (file);
+			fprintf (stderr, "%s: cannot set sort type to %d: %s\n",
 					 ProgramName,
+					 SortMethod,
 					 tagsStrerror (err));
 			exit (1);
 		}
-		tagsClose (file);
 	}
+	if (debugMode)
+		fprintf (stderr, "%s: searching for \"%s\" in \"%s\"\n",
+					 ProgramName, name, TagFileName);
+	if (tagsFind (file, &entry, name, options) == TagSuccess)
+		walkTags (file, &entry, tagsFindNext,
+#ifdef READTAGS_DSL
+				  Formatter? printTagWithFormatter:
+#endif
+				  printTag);
+	else if ((err = tagsGetErrno (file)) != 0)
+	{
+		fprintf (stderr, "%s: error in tagsFind(): %s\n",
+				 ProgramName,
+				 tagsStrerror (err));
+		exit (1);
+	}
+	tagsClose (file);
 }
 
 static void listTags (int pseudoTags)
 {
 	tagFileInfo info;
 	tagEntry entry;
+	int err = 0;
 	tagFile *const file = openTags (TagFileName, &info);
 	if (file == NULL || !info.status.opened)
 	{
@@ -422,9 +395,9 @@ static void listTags (int pseudoTags)
 			tagsClose (file);
 		exit (1);
 	}
-	else if (pseudoTags)
+
+	if (pseudoTags)
 	{
-		int err = 0;
 		if (tagsFirstPseudoTag (file, &entry) == TagSuccess)
 			walkTags (file, &entry, tagsNextPseudoTag, printPseudoTag);
 		else if ((err = tagsGetErrno (file)) != 0)
@@ -434,11 +407,9 @@ static void listTags (int pseudoTags)
 					 tagsStrerror (err));
 			exit (1);
 		}
-		tagsClose (file);
 	}
 	else
 	{
-		int err = 0;
 		if (tagsFirst (file, &entry) == TagSuccess)
 			walkTags (file, &entry, tagsNext,
 #ifdef READTAGS_DSL
@@ -452,8 +423,8 @@ static void listTags (int pseudoTags)
 					 tagsStrerror (err));
 			exit (1);
 		}
-		tagsClose (file);
 	}
+	tagsClose (file);
 }
 
 static const char *const Usage =
@@ -466,6 +437,8 @@ static const char *const Usage =
 	"        Print available terms that can be used in POSTPROCESSOR expression.\n"
 	"        POSTPROCESSOR: filter sorter formatter\n"
 #endif
+	"    %s -v | --version\n"
+	"        Print the version identifier.\n"
 	"    %s [OPTIONS] ACTION\n"
 	"        Do the specified action.\n"
 	"Actions:\n"
@@ -511,6 +484,7 @@ static void printUsage(FILE* stream, int exitCode)
 #ifdef READTAGS_DSL
 			 ProgramName,
 #endif
+			 ProgramName,
 			 ProgramName);
 	exit (exitCode);
 }
@@ -563,6 +537,14 @@ static void *compileExpression(const char* exp, void * (*compiler) (EsObject *),
 	return code;
 }
 #endif
+
+static void printVersion(void)
+{
+	/* readtags uses code of ctags via libutil.
+	 * So we here use the versoin of ctags as the version of readtags. */
+	puts(PROGRAM_VERSION);
+	exit (0);
+}
 
 extern int main (int argc, char **argv)
 {
@@ -625,6 +607,8 @@ extern int main (int argc, char **argv)
 				}
 			}
 #endif
+			else if (strcmp (optname, "version") == 0)
+				printVersion ();
 			else if (strcmp (optname, "escape-output") == 0)
 				escaping = 1;
 			else if (strcmp (optname, "extension-fields") == 0)
@@ -751,6 +735,7 @@ extern int main (int argc, char **argv)
 						else
 							printUsage(stderr, 1);
 #endif
+					case 'v': printVersion ();
 					case 'E': escaping = 1; break;
 					case 'e': extensionFields = 1;         break;
 					case 'i': options |= TAG_IGNORECASE;   break;

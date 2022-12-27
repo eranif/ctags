@@ -67,6 +67,7 @@
 	AutomakeParser, \
 	AwkParser, \
 	BasicParser, \
+	BatsParser, \
 	BetaParser, \
   	BibtexParser, \
 	ClojureParser, \
@@ -100,6 +101,7 @@
 	GDScriptParser, \
 	GemSpecParser, \
 	GoParser, \
+	GPerfParser, \
 	HaskellParser, \
 	HaxeParser, \
 	HtmlParser, \
@@ -182,6 +184,7 @@
 	WindResParser, \
 	YACCParser, \
 	YumRepoParser, \
-	ZephirParser
+	ZephirParser, \
+	ZshParser
 
 #endif  /* CTAGS_MAIN_PARSERS_H */

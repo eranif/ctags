@@ -150,7 +150,15 @@ typedef enum _CXXTagProperty
 	// scoped enum (C++11)
 	CXXTagPropertyScopedEnum = (1 << 16),
 	// function-try-block: int f() try { ... } catch { ... }
-	CXXTagPropertyFunctionTryBlock = (1 << 17)
+	CXXTagPropertyFunctionTryBlock = (1 << 17),
+	// constexpr has been seen.
+	CXXTagPropertyConstexpr = (1 << 18),
+	// consteval has been seen.
+	CXXTagPropertyConsteval = (1 << 19),
+	// constinit has been seen.
+	CXXTagPropertyConstinit = (1 << 20),
+	// thread_local has been seen.
+	CXXTagPropertyThreadLocal = (1 << 21),
 } CXXTagProperty;
 
 // Set the modifiers field of the tag.
@@ -200,4 +208,7 @@ typedef enum {
 // Must be called before attempting to access the kind options.
 void cxxTagInitForLanguage(langType eLangType);
 
+// Functions for filling iCorkIndex field of tokens.
+void cxxTagUseTokensInRangeAsPartOfDefTags(int iCorkIndex, CXXToken * pFrom, CXXToken * pTo);
+void cxxTagUseTokenAsPartOfDefTag(int iCorkIndex, CXXToken * pToken);
 #endif //!_cxxTag_h_

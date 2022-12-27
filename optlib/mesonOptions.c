@@ -56,7 +56,7 @@ extern parserDefinition* MesonOptionsParser (void)
 		"    % \\2 may point a kind. This must be converted to a name from a string.\n"
 		"    \\2 cvn\n"
 		"    % Push the start position of the group 1.\n"
-		"    1 /start _matchloc\n"
+		"    @1\n"
 		"    % To skip an unexpected kind name, _tag is wrapped with stopped.\n"
 		"    { _tag } stopped {\n"
 		"        % Unexpected kind. Clear the stack.\n"
@@ -70,6 +70,8 @@ extern parserDefinition* MesonOptionsParser (void)
 
 	parserDefinition* const def = parserNew ("MesonOptions");
 
+	def->versionCurrent= 0;
+	def->versionAge    = 0;
 	def->enabled       = true;
 	def->extensions    = extensions;
 	def->patterns      = patterns;

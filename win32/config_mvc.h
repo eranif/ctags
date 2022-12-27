@@ -178,10 +178,10 @@
 /* #undef HAVE_FTRUNCATE */
 
 /* Define this value if support multibyte character encoding. */
-#define HAVE_ICONV 1
+/* !!!#define HAVE_ICONV 1 */
 
 /* Define to 1 if you have the <inttypes.h> header file. */
-/* !!!#define HAVE_INTTYPES_H 1 */
+#define HAVE_INTTYPES_H 1
 
 /* Define to 1 if you have the <io.h> header file. */
 #define HAVE_IO_H 1
@@ -364,7 +364,7 @@
 /* #undef HAVE_TOWLOWER */
 
 /* Define to 1 if you have the `truncate' function. */
-#define HAVE_TRUNCATE 1
+/* !!!#define HAVE_TRUNCATE 1 */
 
 /* Define to 1 if typeof works with your compiler. */
 #define HAVE_TYPEOF 1
@@ -421,7 +421,7 @@
 
 
 /* Define to 1 if the compiler supports the keyword '__inline'. */
-/* !!!#define HAVE___INLINE 1 */
+#define HAVE___INLINE 1
 
 /* Define this value if the platform uses "lib" as prefix for iconv functions.
    */

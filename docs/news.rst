@@ -407,18 +407,20 @@ The following parsers have been added:
 * D
 * DBusIntrospect *libxml*
 * Diff
+* Dots *Sh based subparser*
 * DTD
 * DTS
 * Elixir *optlib*
 * Elm *peg/packcc*
 * Falcon
-* FrontMatter *only YAML syntax, running as a guest  on R?Markdown*
+* FrontMatter *only YAML syntax, running as a guest on R?Markdown*
 * FunctionParameters *perl based subparser*
 * Gdbinit script *optlib*
 * GemSpec *Ruby based subparser*
 * GDScript
 * Glade *libxml*
 * Go
+* GPerf *optlib*
 * Haskell
 * Haxe
 * iPythonCell *optlib*, *pthon based subparser*
@@ -482,6 +484,7 @@ The following parsers have been added:
 * Yaml *libyaml*
 * YumRepo
 * Zephir
+* Zsh
 
 See :ref:`optlib` for details on *optlib*.
 Libxml2 is required to use the parser(s) marked with *libxml*.

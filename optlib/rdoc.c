@@ -99,7 +99,7 @@ extern parserDefinition* RDocParser (void)
 		"    \\1 length kindTable length le {\n"
 		"        \\2\n"
 		"        kindTable \\1 length 1 sub get\n"
-		"        2 /start _matchloc\n"
+		"        @2\n"
 		"        _tag _commit\n"
 		"        dup :line 1 sub \\1 scopePopUpTo\n"
 		"        _scopetop {\n"
@@ -114,6 +114,8 @@ extern parserDefinition* RDocParser (void)
 
 	parserDefinition* const def = parserNew ("RDoc");
 
+	def->versionCurrent= 0;
+	def->versionAge    = 0;
 	def->enabled       = true;
 	def->extensions    = extensions;
 	def->patterns      = patterns;

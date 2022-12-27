@@ -2,6 +2,6 @@
 sh
 bash
 ksh
-zsh
 ash
+dash
 shell-script

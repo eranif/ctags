@@ -153,6 +153,7 @@ static EsObject* OPT_KEY_dstack;
  */
 
 static EsObject* array_new (unsigned int attr);
+static EsObject* array_shared_new (EsObject* original, unsigned int attr);
 
 static EsObject*    array_es_init_fat (void *fat, void *ptr, void *extra);
 static void         array_es_free  (void *ptr, void *fat);
@@ -375,8 +376,8 @@ declop(execstack);
 declop(type);
 declop(cvn);
 declop(cvs);
-
-/* cvlit, cvx, xcheck, executeonly, noacess, readonly,
+declop(cvx);
+/* cvlit, xcheck, executeonly, noacess, readonly,
    rcheck, wcheck, cvi, cvr, cvrs, cvs,... */
 
 /* Operators for Virtual Memory Operators  */
@@ -475,8 +476,8 @@ opt_init (void)
 
 	defOP (opt_system_dict, op_mark,           "<<",  0,  "- << mark");
 	defOP (opt_system_dict, op_mark,           "[",   0,  "- [ mark");
-	defOP (opt_system_dict, op__make_array,    "]",   1,  "[ any1 ... anyn ] array");
-	defOP (opt_system_dict, op__make_dict ,    ">>",  1, "<< key1 value1 ... keyn valuen >> dict");
+	defOP (opt_system_dict, op__make_array,    "]",   0,  "[ any1 ... anyn ] array");
+	defOP (opt_system_dict, op__make_dict ,    ">>",  0, "<< key1 value1 ... keyn valuen >> dict");
 
 	defop (opt_system_dict, _help,  0, "- _HELP -");
 	defop (opt_system_dict, pstack, 0, "|- any1 ... anyn PSTACK |- any1 ... anyn");
@@ -570,6 +571,7 @@ opt_init (void)
 	defop (opt_system_dict, type,   1, "any TYPE name");
 	defop (opt_system_dict, cvn,    1, "string CVN name");
 	defop (opt_system_dict, cvs,    2, "any string CVS string");
+	defop (opt_system_dict, cvx,    1, "any CVX any");
 
 	defop (opt_system_dict, null,   0, "- NULL null");
 	defop (opt_system_dict, bind,   1, "proc BIND proc");
@@ -1974,6 +1976,14 @@ array_new (unsigned int attr)
 }
 
 static EsObject*
+array_shared_new (EsObject* original, unsigned int attr)
+{
+	ptrArray *a = es_pointer_get (original);
+	ptrArrayRef (a);
+	return es_fatptr_new (OPT_TYPE_ARRAY, a, &attr);
+}
+
+static EsObject*
 array_es_init_fat (void *fat, void *ptr, void *extra)
 {
 	ArrayFat *a = fat;
@@ -1991,9 +2001,6 @@ array_es_free (void *ptr, void *fat)
 static int
 array_es_equal (const void *a, const void *afat, const void *b, const void *bfat)
 {
-	if (((ArrayFat *)afat)->attr != ((ArrayFat *)bfat)->attr)
-		return 0;
-
 	if (ptrArrayIsEmpty ((ptrArray *)a) && ptrArrayIsEmpty ((ptrArray*)b))
 		return 1;
 	else if (a == b)
@@ -2129,7 +2136,11 @@ dict_op_def (EsObject* dict, EsObject *key, EsObject *val)
 	key = es_object_ref (key);
 	val = es_object_ref (val);
 
-	hashTableUpdateItem (t, key, val);
+	if (hashTableUpdateOrPutItem (t, key, val))
+	{
+		/* A key in the hashtable is reused. */
+		es_object_unref (key);
+	}
 }
 
 static bool
@@ -2464,7 +2475,14 @@ op__make_dict (OptVM *vm, EsObject *name)
 			return OPT_ERR_TYPECHECK;
 	}
 
-	EsObject *d = dict_new (n % 2 + 1, ATTR_READABLE|ATTR_WRITABLE); /* FIXME: + 1 */
+	/* A hashtable grows automatically when its filling rate is
+	 * grater than 80%. If we put elements between `<<' and `>>' to a dictionary
+	 * initialized with the size equal to the number of elements, the dictionary
+	 * grows once during putting them. Making a 1/0.8 times larger dictionary can
+	 * avoid the predictable growing. */
+	int size = (10 * (n > 0? (n / 2): 1)) / 8;
+
+	EsObject *d = dict_new (size, ATTR_READABLE|ATTR_WRITABLE);
 	for (int i = 0; i < (n / 2); i++)
 	{
 		EsObject *val = ptrArrayLast (vm->ostack);
@@ -3029,8 +3047,10 @@ op_dict (OptVM *vm, EsObject *name)
 		return OPT_ERR_TYPECHECK;
 
 	int n = es_integer_get (nobj);
-	if (n < 1)
+	if (n < 0)
 		return OPT_ERR_RANGECHECK;
+	else if (n == 0)
+		n = 1;
 
 	ptrArrayDeleteLast (vm->ostack);
 
@@ -3731,7 +3751,7 @@ op_repeat (OptVM *vm, EsObject *name)
 	ptrArrayDeleteLast (vm->ostack);
 	ptrArrayDeleteLast (vm->ostack);
 
-	EsObject *e = es_false;;
+	EsObject *e = es_false;
 	for (int i = 0; i < n; i++)
 	{
 		e = vm_call_proc (vm, proc);
@@ -3914,6 +3934,34 @@ op_cvs (OptVM *vm, EsObject *name)
 	ptrArrayDeleteLastInBatch (vm->ostack, 2);
 	vm_ostack_push (vm, o);
 	es_object_unref (o);
+
+	return es_false;
+}
+
+static EsObject*
+op_cvx (OptVM *vm, EsObject *name)
+{
+	EsObject *o = ptrArrayLast (vm->ostack);
+
+	if (es_object_get_type (o) == OPT_TYPE_ARRAY
+		&& (! (((ArrayFat *)es_fatptr_get (o))->attr & ATTR_EXECUTABLE)))
+	{
+		EsObject *xarray = array_shared_new (o,
+											 ((ArrayFat *)es_fatptr_get (o))->attr | ATTR_EXECUTABLE);
+		ptrArrayDeleteLast (vm->ostack);
+		vm_ostack_push (vm, xarray);
+		es_object_unref(xarray);
+
+	}
+	else if (es_object_get_type (o) == OPT_TYPE_NAME
+			 && (! (((NameFat *)es_fatptr_get (o))->attr & ATTR_EXECUTABLE)))
+	{
+		EsObject *symbol = es_pointer_get (o);
+		EsObject *xname = name_new (symbol, ((NameFat *)es_fatptr_get (o))->attr | ATTR_EXECUTABLE);
+		ptrArrayDeleteLast (vm->ostack);
+		vm_ostack_push (vm, xname);
+		es_object_unref(xname);
+	}
 
 	return es_false;
 }
@@ -4218,7 +4266,7 @@ static EsObject*
 op__forall_dict (OptVM *vm, EsObject *name,
 				 EsObject *proc, EsObject *obj)
 {
-	EsObject *r = es_false;;
+	EsObject *r = es_false;
 	hashTable *ht = es_pointer_get (obj);
 	struct dictForallData data = {
 		.vm   = vm,

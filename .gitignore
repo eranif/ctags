@@ -49,6 +49,7 @@ depcomp
 gdb-backtrace.txt
 GNUmakefile.in
 install-sh
+last-aclocal.m4
 libctags.a
 libutil.a
 Makefile.in
@@ -71,6 +72,7 @@ tags.test
 test.*.diff
 tg
 tinst-root
+utiltest
 win32/*.aps
 win32/*.opensdf
 win32/*.sdf

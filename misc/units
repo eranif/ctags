@@ -1,5 +1,10 @@
 #!/bin/sh
 #
+###################################################################
+# Use units.py instead of this shell script.
+# Only minor parts of this script are still used.
+###################################################################
+#
 # units - Units test harness for ctags
 #
 # Copyright (C) 2014 Masatake YAMATO
@@ -2536,7 +2541,7 @@ is_validator_runnable ()
     local d=$2
     shift 2
 
-    "$d/"validator-"$v" is_runnable
+    "$d/"validator-"$v" is_runnable unused $d
 }
 
 update_validator_list ()
@@ -2719,7 +2724,7 @@ validate_file ()
     local validators_dir=$3
     shift 3
 
-    ${validators_dir}/validator-${validator} validate $input
+    ${validators_dir}/validator-${validator} validate $input ${validators_dir}
     return $?
 }
 
@@ -2798,7 +2803,8 @@ validate_dir ()
 	     done | sort)
 
     for f in $inputs; do
-	t=${f#input}; t=${t%.*}
+	t=$(basename $f)
+	t=${t#input}; t=${t%.*}
 	v=$(resolve_validator "${base_dir}"/validator"$t" \
 			     "$default_validator" \
 			     "$has_expected_tags" \

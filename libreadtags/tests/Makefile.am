@@ -2,6 +2,7 @@ TESTS = \
 	\
 	test-api-tagsOpen \
 	test-api-tagsFind \
+	test-api-tagsFindPseudoTag \
 	test-api-tagsFirstPseudoTag \
 	test-api-tagsFirst \
 	test-api-tagsClose \
@@ -9,6 +10,7 @@ TESTS = \
 	\
 	test-fix-unescaping \
 	test-fix-null-deref \
+	test-fix-large-tags \
 	\
 	$(NULL)
 
@@ -16,6 +18,7 @@ check_PROGRAMS = \
 	\
 	test-api-tagsOpen \
 	test-api-tagsFind \
+	test-api-tagsFindPseudoTag \
 	test-api-tagsFirstPseudoTag \
 	test-api-tagsFirst \
 	test-api-tagsClose \
@@ -23,6 +26,7 @@ check_PROGRAMS = \
 	\
 	test-fix-unescaping \
 	test-fix-null-deref \
+	test-fix-large-tags \
 	\
 	$(NULL)
 
@@ -55,6 +59,9 @@ EXTRA_DIST += duplicated-names--sorted-no.tags
 EXTRA_DIST += duplicated-names--sorted-foldcase.tags
 EXTRA_DIST += broken-line-field-in-middle.tags
 
+test_api_tagsFindPseudoTag = test-api-tagsFindPseudoTag.c
+test_api_tagsFindPseudoTag_DEPENDENCIES = $(DEPS)
+
 test_api_tagsFirstPseudoTag = test-api-tagsFirstPseudoTag.c
 test_api_tagsFirstPseudoTag_DEPENDENCIES = $(DEPS)
 EXTRA_DIST += ptag-sort-no.tags
@@ -80,3 +87,6 @@ EXTRA_DIST += unescaping.tags
 test_fix_null_deref = test-fix-null-deref.c
 test_fix_null_deref_DEPENDENCIES = $(DEPS)
 EXTRA_DIST += null-deref.tags
+
+test_fix_large_tags = test-fix-large-tags.c
+test_fix_large_tags_DEPENDENCIES = $(DEPS)

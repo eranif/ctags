@@ -8,26 +8,31 @@ insert_final_newline = true
 indent_size = 4
 indent_style = tab
 trim_trailing_whitespace = true
+tab_width = 4
 
 [misc/packcc/packcc.c]
 indent_size = 4
 indent_style = space
 trim_trailing_whitespace = true
+tab_width = 4
 
 [*.{ctags,ps}]
 indent_size = 4
 indent_style = space
 trim_trailing_whitespace = true
+tab_width = 4
 
 [{Makefile*,*.mak}]
 indent_size = 8
 indent_style = tab
 trim_trailing_whitespace = true
+tab_width = 8
 
 [*.rst*]
 indent_size = 4
 indent_style = tab
 trim_trailing_whitespace = true
+tab_width = 4
 
 [gnulib/*.{c,h}]
 tab_width = 8
@@ -35,11 +40,8 @@ tab_width = 8
 [misc/optlib2c]
 trim_trailing_whitespace = true
 
-[win32/*]
+[win32/*.{bat,sln,vcxproj,vcxproj.filters}]
 end_of_line = crlf
-
-[win32/*.vcxproj*.in]
-end_of_line = lf
 
 [win32/*.vcxproj*]
 insert_final_newline = false

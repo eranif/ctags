@@ -135,3 +135,16 @@ direq_maybe ()
     [ "$(cd ${1} && pwd)" = "$(cd ${2} && pwd)" ]
     return $?
 }
+
+check_encoding()
+{
+    if iconv -l 2> /dev/null | grep -qi "$1"; then
+		return 0
+	fi
+	skip "iconv doesn't know about the encoding: $1"
+}
+
+jdropver()
+{
+	sed -e 's/, "version": "[0-9.]*"//'
+}

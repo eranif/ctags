@@ -44,6 +44,7 @@ enum {
 	KEYWORD_lambda,
 	KEYWORD_pass,
 	KEYWORD_return,
+	KEYWORD_REST
 };
 typedef int keywordId; /* to allow KEYWORD_NONE */
 
@@ -140,7 +141,7 @@ static kindDefinition PythonKinds[COUNT_KIND] = {
 	{true, 'I', "namespace", "name referring a module defined in other file"},
 	{true, 'i', "module",    "modules",
 	 .referenceOnly = true,  ATTACH_ROLES(PythonModuleRoles)},
-	{true, 'x', "unknown",   "name referring a class/variable/function/module defined in other module",
+	{true, 'Y', "unknown",   "name referring a class/variable/function/module defined in other module",
 	 .referenceOnly = false, ATTACH_ROLES(PythonUnknownRoles)},
 	{false, 'z', "parameter", "function parameters" },
 	{false, 'l', "local",    "local variables" },
@@ -162,6 +163,22 @@ static const keywordTable PythonKeywordTable[] = {
 	{ "lambda",			KEYWORD_lambda			},
 	{ "pass",			KEYWORD_pass			},
 	{ "return",			KEYWORD_return			},
+};
+
+/* Taken from https://docs.python.org/3/reference/lexical_analysis.html#keywords */
+const static struct keywordGroup PythonRestKeywords = {
+	.value = KEYWORD_REST,
+	.addingUnlessExisting = true,
+	.keywords = {
+		"False",      "await",      "else",       "import",     "pass",
+		"None",       "break",      "except",     "in",         "raise",
+		"True",       "class",      "finally",    "is",         "return",
+		"and",        "continue",   "for",        "lambda",     "try",
+		"as",         "def",        "from",       "nonlocal",   "while",
+		"assert",     "del",        "global",     "not",        "with",
+		"async",      "elif",       "if",         "or",         "yield",
+		NULL
+	},
 };
 
 typedef enum eTokenType {
@@ -1718,6 +1735,7 @@ static void initialize (const langType language)
 	Lang_python = language;
 
 	TokenPool = objPoolNew (16, newPoolToken, deletePoolToken, clearPoolToken, NULL);
+	addKeywordGroup (&PythonRestKeywords, Lang_python);
 }
 
 static void finalize (langType language CTAGS_ATTR_UNUSED, bool initialized)

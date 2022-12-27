@@ -27,8 +27,10 @@ GEN_IN_MAN_FILES = \
 	ctags-client-tools.7 \
 	ctags-faq.7 \
 	\
+	ctags-lang-asm.7 \
 	ctags-lang-gdscript.7 \
 	ctags-lang-iPythonCell.7 \
+	ctags-lang-javascript.7 \
 	ctags-lang-julia.7 \
 	ctags-lang-python.7 \
 	ctags-lang-tcl.7 \
@@ -38,9 +40,11 @@ GEN_IN_MAN_FILES = \
 	ctags-lang-rmarkdown.7 \
 	ctags-lang-sql.7 \
 	ctags-lang-elm.7 \
+	ctags-lang-systemtap.7 \
 	\
 	readtags.1 \
 	tags.5 \
+	ctags-json-output.5 \
 	\
 	$(NULL)
 

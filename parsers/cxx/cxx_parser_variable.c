@@ -757,6 +757,13 @@ got_identifier:
 				// Volatile is part of the type, so we don't mark it as a property
 				//if(g_cxx.uKeywordState & CXXParserKeywordStateSeenVolatile)
 				//	uProperties |= CXXTagPropertyVolatile;
+				if(g_cxx.uKeywordState & CXXParserKeywordStateSeenConstexpr)
+					uProperties |= CXXTagPropertyConstexpr;
+				if(g_cxx.uKeywordState & CXXParserKeywordStateSeenConstinit)
+					uProperties |= CXXTagPropertyConstinit;
+				// consteval is not here; it is for functions.
+				if(g_cxx.uKeywordState & CXXParserKeywordStateSeenThreadLocal)
+					uProperties |= CXXTagPropertyThreadLocal;
 
 				pszProperties = cxxTagSetProperties(uProperties);
 			}
@@ -765,6 +772,7 @@ got_identifier:
 				cxxTagHandleTemplateFields();
 
 			iCorkIndex = cxxTagCommit(&iCorkIndexFQ);
+			cxxTagUseTokenAsPartOfDefTag(iCorkIndexFQ, pIdentifier);
 
 			if(pTypeToken)
 				cxxTokenDestroy(pTypeToken);

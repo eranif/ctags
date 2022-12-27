@@ -9,7 +9,7 @@ is_feature_available ${CTAGS} interactive
 # It seems that the output format is slightly different between libjansson versions
 s()
 {
-	sed -e s/':"'/': "'/g
+	sed -e s/':"'/': "'/g | jdropver
 }
 
 CTAGS="$CTAGS --options=NONE"

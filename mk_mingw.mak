@@ -9,7 +9,7 @@ CFLAGS = -Wall -std=gnu99
 COMMON_DEFINES =
 DEFINES = -DWIN32 $(COMMON_DEFINES) -DHAVE_CONFIG_H -DHAVE_PACKCC
 INCLUDES = -I. -Ignulib -Ilibreadtags -iquote parsers -iquote main -iquote dsl
-CC = gcc
+CC = clang
 WINDRES = windres
 OPTLIB2C = ./misc/optlib2c
 PACKCC   = ./packcc.exe

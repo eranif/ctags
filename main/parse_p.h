@@ -69,10 +69,8 @@ extern bool doesLanguageRequestAutomaticFQTag (const langType language);
 extern langType getNamedLanguageFull (const char *const name, size_t len, bool noPretending, bool include_aliases);
 
 extern kindDefinition* getLanguageKind(const langType language, int kindIndex);
-extern kindDefinition* getLanguageKindForName (const langType language, const char *kindName);
+extern kindDefinition* getLanguageKindForLetter (const langType language, char kindLetter);
 extern roleDefinition* getLanguageRole(const langType language, int kindIndex, int roleIndex);
-extern roleDefinition* getLanguageRoleForName (const langType language, int kindIndex,
-											   const char *roleName);
 extern unsigned int getLanguageVersionCurrent (const langType language);
 extern unsigned int getLanguageVersionAge (const langType language);
 
@@ -118,8 +116,8 @@ extern void printLanguageRoles (const langType language, const char* letters,
 extern void printLanguageAliases (const langType language,
 								  bool withListHeader, bool machinable, FILE *fp);
 extern void printLanguageList (void);
-extern void printLanguageParameters (const langType language,
-									 bool withListHeader, bool machinable, FILE *fp);
+extern void printLanguageParams (const langType language,
+								 bool withListHeader, bool machinable, FILE *fp);
 extern void printLanguageSubparsers (const langType language,
 									 bool withListHeader, bool machinable, FILE *fp);
 extern void printLangdefFlags (bool withListHeader, bool machinable, FILE *fp);
@@ -140,12 +138,15 @@ extern bool runParserInNarrowedInputStream (const langType language,
 extern void freeEncodingResources (void);
 #endif
 
+extern bool doesLanguageHaveForeignDependency (const langType language, const langType foreign_lang);
+
 /* Regex interface */
 extern bool processLanguageRegexOption (langType language, enum regexParserType regptype, const char *const parameter);
 extern void notifyLanguageRegexInputStart (langType language);
 extern void notifyLanguageRegexInputEnd (langType language);
 
-extern void matchLanguageRegex (const langType language, const vString* const line);
+extern bool hasLanguagePostRunRegexPatterns (const langType language);
+extern void matchLanguageRegex (const langType language, const vString* const line, bool postrun);
 extern void freeRegexResources (void);
 extern bool checkRegex (void);
 extern void useRegexMethod (const langType language);
@@ -181,5 +182,8 @@ extern bool makeParserVersionPseudoTags (const langType language,
 
 extern void printLanguageMultitableStatistics (langType language);
 extern void printParserStatisticsIfUsed (langType lang);
+
+/* For keeping the API compatibility with Geany, we use a macro here. */
+#define applyLanguageParam applyParameter
 
 #endif	/* CTAGS_MAIN_PARSE_PRIVATE_H */

@@ -69,16 +69,17 @@ enum eKeywordId {
 	KEYWORD_FINAL, KEYWORD_FLOAT, KEYWORD_FOR, KEYWORD_FOREACH,
 	KEYWORD_FRIEND, KEYWORD_FUNCTION,
 	KEYWORD_GOTO,
-	KEYWORD_IF, KEYWORD_IMPLEMENTS, KEYWORD_IMPORT, KEYWORD_INLINE, KEYWORD_INT,
+	KEYWORD_IF, KEYWORD_IMMUTABLE, KEYWORD_IMPLEMENTS, KEYWORD_IMPORT,
+	KEYWORD_INLINE, KEYWORD_INT,
 	KEYWORD_INOUT, KEYWORD_INTERFACE,
 	KEYWORD_INTERNAL,
 	KEYWORD_LONG,
 	KEYWORD_MUTABLE,
 	KEYWORD_NAMESPACE, KEYWORD_NEW, KEYWORD_NATIVE,
-	KEYWORD_OPERATOR, KEYWORD_OVERLOAD, KEYWORD_OVERRIDE,
+	KEYWORD_OPERATOR, KEYWORD_OVERRIDE,
 	KEYWORD_PACKAGE, KEYWORD_PRIVATE,
 	KEYWORD_PROTECTED, KEYWORD_PUBLIC,
-	KEYWORD_REGISTER, KEYWORD_RETURN,
+	KEYWORD_REGISTER, KEYWORD_RETURN, KEYWORD_SHARED,
 	KEYWORD_SHORT, KEYWORD_SIGNED, KEYWORD_STATIC, KEYWORD_STRING,
 	KEYWORD_STRUCT, KEYWORD_SWITCH, KEYWORD_SYNCHRONIZED,
 	KEYWORD_TEMPLATE, KEYWORD_THIS, KEYWORD_THROW,
@@ -419,6 +420,7 @@ static const keywordDesc KeywordTable [] = {
      { "idouble",         KEYWORD_IDOUBLE,         { 0, 1, 0 } },
      { "if",              KEYWORD_IF,              { 1, 1, 1 } },
      { "ifloat",          KEYWORD_IFLOAT,          { 0, 1, 0 } },
+     { "immutable",       KEYWORD_IMMUTABLE,       { 0, 1, 0 } },
      { "implements",      KEYWORD_IMPLEMENTS,      { 0, 0, 1 } },
      { "import",          KEYWORD_IMPORT,          { 0, 1, 1 } },
      { "in",              KEYWORD_IN,              { 0, 1, 0 } },
@@ -441,7 +443,6 @@ static const keywordDesc KeywordTable [] = {
      { "null",            KEYWORD_NULL,            { 0, 1, 0 } },
      { "operator",        KEYWORD_OPERATOR,        { 1, 1, 0 } },
      { "out",             KEYWORD_OUT,             { 0, 1, 0 } },
-     { "overload",        KEYWORD_OVERLOAD,        { 0, 1, 0 } },
      { "override",        KEYWORD_OVERRIDE,        { 1, 1, 0 } },
      { "package",         KEYWORD_PACKAGE,         { 0, 1, 1 } },
      { "pragma",          KEYWORD_PRAGMA,          { 0, 1, 0 } },
@@ -452,6 +453,7 @@ static const keywordDesc KeywordTable [] = {
      { "register",        KEYWORD_REGISTER,        { 0, 1, 0 } },
      { "return",          KEYWORD_RETURN,          { 1, 1, 1 } },
      { "scope",           KEYWORD_SCOPE,           { 0, 1, 0 } },
+     { "shared",          KEYWORD_SHARED,          { 0, 1, 0 } },
      { "short",           KEYWORD_SHORT,           { 1, 1, 1 } },
      { "signed",          KEYWORD_SIGNED,          { 0, 1, 0 } },
      { "static",          KEYWORD_STATIC,          { 1, 1, 1 } },
@@ -494,6 +496,7 @@ static const keywordDesc KeywordTable [] = {
 *   FUNCTION PROTOTYPES
 */
 static void createTags (const unsigned int nestLevel, statementInfo *const parent);
+static void parseAtMarkStyleAnnotation (statementInfo *const st);
 
 /*
 *   FUNCTION DEFINITIONS
@@ -1133,7 +1136,8 @@ static bool findScopeHierarchy (vString *const string, const statementInfo *cons
 			{
 				if (s->declaration == DECL_PRIVATE ||
 					s->declaration == DECL_PROTECTED ||
-					s->declaration == DECL_PUBLIC) {
+					s->declaration == DECL_PUBLIC)
+				{
 					continue;
 				}
 
@@ -1235,8 +1239,7 @@ static int makeTag (const tokenInfo *const token,
 		else
 			initRefTagEntry (&e, vStringValue (token->name), kind, role);
 
-		e.lineNumber	= token->lineNumber;
-		e.filePosition	= token->filePosition;
+		updateTagLine (&e, token->lineNumber,  token->filePosition);
 		e.isFileScope	= isFileScope;
 		if (e.isFileScope)
 			markTagExtraBit (&e, XTAG_FILE_SCOPE);
@@ -1482,7 +1485,8 @@ static void skipToMatch (const char *const pair)
 	while (matchLevel > 0  &&  (c = skipToNonWhite ()) != EOF)
 	{
 		if (CollectingSignature)
-			vStringPut (Signature, c);
+			cppVStringPut (Signature, c);
+
 		if (c == begin)
 		{
 			++matchLevel;
@@ -1567,11 +1571,11 @@ static void readIdentifier (tokenInfo *const token, const int firstChar)
 
 	do
 	{
-		vStringPut (name, c);
+		cppVStringPut (name, c);
 		if (CollectingSignature)
 		{
 			if (!first)
-				vStringPut (Signature, c);
+				cppVStringPut (Signature, c);
 			first = false;
 		}
 		c = cppGetc ();
@@ -1700,7 +1704,7 @@ static void readOperator (statementInfo *const st)
 					vStringPut (name, ' ');
 					whiteSpace = false;
 				}
-				vStringPut (name, c);
+				cppVStringPut (name, c);
 			}
 			c = cppGetc ();
 		} while (! isOneOf (c, "(;")  &&  c != EOF);
@@ -1710,7 +1714,7 @@ static void readOperator (statementInfo *const st)
 		vStringPut (name, ' ');  /* always separate operator from keyword */
 		do
 		{
-			vStringPut (name, c);
+			vStringPut (name, c);	/* acceptable are all ascii */
 			c = cppGetc ();
 		} while (isOneOf (c, acceptable));
 	}
@@ -1756,11 +1760,13 @@ static void setAccess (statementInfo *const st, const accessType access)
 			st->member.access = access;
 			cppUngetc (c);
 		}
-		else if (c == ':') {
+		else if (c == ':')
+		{
 			reinitStatement (st, false);
 			st->member.accessDefault = access;
 		}
-		else {
+		else
+		{
 			cppUngetc (c);
 		}
 	}
@@ -1873,7 +1879,16 @@ static void processToken (tokenInfo *const token, statementInfo *const st)
 		case KEYWORD_CATCH:     skipParens (); skipBraces ();           break;
 		case KEYWORD_CHAR:      st->declaration = DECL_BASE;            break;
 		case KEYWORD_CLASS:     checkIsClassEnum (st, DECL_CLASS);      break;
-		case KEYWORD_CONST:     st->declaration = DECL_BASE;            break;
+		case KEYWORD_IMMUTABLE:
+		case KEYWORD_INOUT:
+		case KEYWORD_SHARED:
+			if (!isInputLanguage (Lang_d))
+				break;
+		case KEYWORD_CONST:
+			st->declaration = DECL_BASE;
+			if (isInputLanguage (Lang_d))
+				skipParens ();
+			break;
 		case KEYWORD_DOUBLE:    st->declaration = DECL_BASE;            break;
 		case KEYWORD_ENUM:      st->declaration = DECL_ENUM;            break;
 		case KEYWORD_EXTENDS:   readParents (st, '.');
@@ -2068,10 +2083,19 @@ static bool skipPostArgumentStuff (
 				{
 				case KEYWORD_ATTRIBUTE: skipParens ();  break;
 				case KEYWORD_THROW:     skipParens ();  break;
-				case KEYWORD_IF:        if (isInputLanguage (Lang_d)) skipParens ();  break;
+				case KEYWORD_IF: // D template constraint
+				// D contract expressions
+				case KEYWORD_IN:
+				case KEYWORD_OUT:
+					if (isInputLanguage (Lang_d))
+						skipParens ();
+					break;
 				case KEYWORD_TRY:                       break;
 
 				case KEYWORD_CONST:
+				case KEYWORD_IMMUTABLE:
+				case KEYWORD_INOUT:
+				case KEYWORD_SHARED:
 				case KEYWORD_VOLATILE:
 					if (vStringLength (Signature) > 0)
 					{
@@ -2090,7 +2114,7 @@ static bool skipPostArgumentStuff (
 				case KEYWORD_NAMESPACE:
 				case KEYWORD_NEW:
 				case KEYWORD_OPERATOR:
-				case KEYWORD_OVERLOAD:
+				case KEYWORD_OVERRIDE:
 				case KEYWORD_PRIVATE:
 				case KEYWORD_PROTECTED:
 				case KEYWORD_PUBLIC:
@@ -2121,6 +2145,10 @@ static bool skipPostArgumentStuff (
 					}
 					break;
 				}
+			}
+			else if (isInputLanguage (Lang_d) && c == '@')
+			{
+				parseAtMarkStyleAnnotation (st);
 			}
 		}
 		if (! end)
@@ -2172,12 +2200,15 @@ static void analyzePostParens (statementInfo *const st, parenInfo *const info)
 	cppUngetc (c);
 	if (isOneOf (c, "{;,="))
 		;
-	else if (isInputLanguage (Lang_java)) {
-
-		if (!insideAnnotationBody(st)) {
+	else if (isInputLanguage (Lang_java))
+	{
+		if (!insideAnnotationBody(st))
+		{
 			skipJavaThrows (st);
 		}
-	} else {
+	}
+	else
+	{
 		if (! skipPostArgumentStuff (st, info))
 		{
 			verbose (
@@ -2196,24 +2227,32 @@ static bool languageSupportsGenerics (void)
 static void processAngleBracket (void)
 {
 	int c = cppGetc ();
-	if (c == '>') {
+	if (c == '>')
+	{
 		/* already found match for template */
-	} else if (languageSupportsGenerics () && c != '<' && c != '=') {
+	}
+	else if (languageSupportsGenerics () && c != '<' && c != '=')
+	{
 		/* this is a template */
 		cppUngetc (c);
 		skipToMatch ("<>");
-	} else if (c == '<') {
+	}
+	else if (c == '<')
+	{
 		/* skip "<<" or "<<=". */
 		c = cppGetc ();
-		if (c != '=') {
+		if (c != '=')
+		{
 			cppUngetc (c);
 		}
-	} else {
+	}
+	else
+	{
 		cppUngetc (c);
 	}
 }
 
-static void parseJavaAnnotation (statementInfo *const st)
+static void parseAtMarkStyleAnnotation (statementInfo *const st)
 {
 	/*
 	 * @Override
@@ -2225,7 +2264,11 @@ static void parseJavaAnnotation (statementInfo *const st)
 	tokenInfo *const token = activeToken (st);
 
 	int c = skipToNonWhite ();
-	readIdentifier (token, c);
+	if (cppIsident1 (c))
+		readIdentifier (token, c);
+	else
+		cppUngetc (c); // D allows: @ ( ArgumentList )
+
 	if (token->keyword == KEYWORD_INTERFACE)
 	{
 		/* Oops. This was actually "@interface" defining a new annotation. */
@@ -2241,7 +2284,6 @@ static void parseJavaAnnotation (statementInfo *const st)
 static int parseParens (statementInfo *const st, parenInfo *const info)
 {
 	tokenInfo *const token = activeToken (st);
-	unsigned int identifierCount = 0;
 	unsigned int depth = 1;
 	bool firstChar = true;
 	int nextChar = '\0';
@@ -2253,8 +2295,8 @@ static int parseParens (statementInfo *const st, parenInfo *const info)
 	do
 	{
 		int c = skipToNonWhite ();
-		vStringPut (Signature, c);
 
+		cppVStringPut (Signature, c);
 		switch (c)
 		{
 			case '^':
@@ -2263,8 +2305,6 @@ static int parseParens (statementInfo *const st, parenInfo *const info)
 			case '&':
 			case '*':
 				info->isPointer = true;
-				if (identifierCount == 0)
-					info->isParamList = false;
 				initToken (token);
 				break;
 
@@ -2346,9 +2386,13 @@ static int parseParens (statementInfo *const st, parenInfo *const info)
 				break;
 
 			default:
-				if (c == '@' && isInputLanguage (Lang_java))
+				if (c == '@' && (isInputLanguage (Lang_d) || isInputLanguage (Lang_java)))
 				{
-					parseJavaAnnotation(st);
+					parseAtMarkStyleAnnotation (st);
+				}
+				else if (isInputLanguage (Lang_d) && c == '!')
+				{	/* template instantiation */
+					info->isNameCandidate = false;
 				}
 				else if (cppIsident1 (c))
 				{
@@ -2358,6 +2402,9 @@ static int parseParens (statementInfo *const st, parenInfo *const info)
 					else if (isType (token, TOKEN_KEYWORD))
 					{
 						if (token->keyword != KEYWORD_CONST &&
+							token->keyword != KEYWORD_IMMUTABLE &&
+							token->keyword != KEYWORD_INOUT &&
+							token->keyword != KEYWORD_SHARED &&
 							token->keyword != KEYWORD_VOLATILE)
 						{
 							info->isNameCandidate = false;
@@ -2460,11 +2507,7 @@ static void addContext (statementInfo *const st, const tokenInfo* const token)
 {
 	if (isType (token, TOKEN_NAME))
 	{
-		if (vStringLength (st->context->name) > 0)
-		{
-			vStringPut (st->context->name, '.');
-		}
-		vStringCat (st->context->name, token->name);
+		vStringJoin (st->context->name, '.', token->name);
 		st->context->type = TOKEN_NAME;
 	}
 }
@@ -2637,11 +2680,12 @@ static void parseGeneralToken (statementInfo *const st, const int c)
 		if (c2 != '=')
 			cppUngetc (c2);
 	}
-	else if (c == '@' && isInputLanguage (Lang_java))
+	else if (c == '@' && (isInputLanguage (Lang_d) || isInputLanguage (Lang_java)))
 	{
-		parseJavaAnnotation (st);
+		parseAtMarkStyleAnnotation (st);
 	}
-	else if (c == STRING_SYMBOL) {
+	else if (c == CPP_STRING_SYMBOL)
+	{
 		setToken(st, TOKEN_NONE);
 	}
 }
@@ -2668,6 +2712,17 @@ static void nextToken (statementInfo *const st)
 			case '[': skipToMatch ("[]");                       break;
 			case '{': setToken (st, TOKEN_BRACE_OPEN);          break;
 			case '}': setToken (st, TOKEN_BRACE_CLOSE);         break;
+			case '!':
+				if (isInputLanguage (Lang_d))
+				{
+					c = skipToNonWhite ();
+					if (c == '(')
+					{
+						// template instance with parameter list
+						skipToMatch("()");
+						break;
+					}
+				}
 			default:  parseGeneralToken (st, c);                break;
 		}
 		token = activeToken (st);
@@ -2742,9 +2797,7 @@ static void checkStatementEnd (statementInfo *const st, int corkIndex)
 {
 	const tokenInfo *const token = activeToken (st);
 
-	tagEntryInfo *e = getEntryInCorkQueue (corkIndex);
-	if (e)
-		e->extensionFields.endLine = token->lineNumber;
+	setTagEndLineToCorkEntry (corkIndex, token->lineNumber);
 
 	if (isType (token, TOKEN_COMMA))
 		reinitStatement (st, true);
@@ -2819,9 +2872,8 @@ static int tagCheck (statementInfo *const st)
 		case TOKEN_BRACE_OPEN:
 			if (isType (prev, TOKEN_ARGS))
 			{
-				if (st->declaration == DECL_TEMPLATE)
-					corkIndex = qualifyBlockTag (st, prev2);
-				else if (st->declaration == DECL_FUNCTION_TEMPLATE) {
+				if (st->declaration == DECL_FUNCTION_TEMPLATE)
+				{
 					corkIndex = qualifyFunctionTag (st, st->blockName);
 				}
 				else if (st->haveQualifyingName)
@@ -2832,7 +2884,8 @@ static int tagCheck (statementInfo *const st)
 					/* D declaration templates */
 					if (isInputLanguage (Lang_d) &&
 						(st->declaration == DECL_CLASS || st->declaration == DECL_STRUCT ||
-						st->declaration == DECL_INTERFACE || st->declaration == DECL_UNION))
+						st->declaration == DECL_INTERFACE || st->declaration == DECL_UNION ||
+						st->declaration == DECL_TEMPLATE))
 						corkIndex = qualifyBlockTag (st, prev2);
 					else
 					{
@@ -2866,8 +2919,8 @@ static int tagCheck (statementInfo *const st)
 			break;
 
 		case TOKEN_KEYWORD:
-
-			if (token->keyword == KEYWORD_DEFAULT && isType(prev, TOKEN_ARGS) && insideAnnotationBody(st)) {
+			if (token->keyword == KEYWORD_DEFAULT && isType(prev, TOKEN_ARGS) && insideAnnotationBody(st))
+			{
 				corkIndex = qualifyFunctionDeclTag(st, prev2);
 			}
 			break;

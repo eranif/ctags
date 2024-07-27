@@ -133,7 +133,7 @@ static void writeCurTokenToStr (lexerState *lexer, vString *out_str)
 			vStringCatS(out_str, "->");
 			break;
 		default:
-			vStringPut(out_str, (char) lexer->cur_token);
+			vStringPut(out_str, lexer->cur_token);
 	}
 }
 
@@ -156,7 +156,7 @@ static void advanceNChar (lexerState *lexer, int n)
 static void advanceAndStoreChar (lexerState *lexer)
 {
 	if (vStringLength(lexer->token_str) < MAX_STRING_LENGTH)
-		vStringPut(lexer->token_str, (char) lexer->cur_c);
+		vStringPut(lexer->token_str, lexer->cur_c);
 	advanceChar(lexer);
 }
 
@@ -441,8 +441,7 @@ static void addTag (vString* ident, const char* arg_list, int kind, unsigned lon
 	tagEntryInfo tag;
 	initTagEntry(&tag, vStringValue(ident), kind);
 
-	tag.lineNumber = line;
-	tag.filePosition = pos;
+	updateTagLine (&tag, line, pos);
 
 	tag.extensionFields.signature = arg_list;
 	/*tag.extensionFields.varType = type;*/ /* FIXME: map to typeRef[1]? */

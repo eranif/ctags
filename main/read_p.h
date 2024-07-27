@@ -23,8 +23,8 @@
 */
 
 enum nestedInputBoundaryFlag {
-	BOUNDARY_START = 1UL << 0,
-	BOUNDARY_END   = 1UL << 1,
+	INPUT_BOUNDARY_START = 1UL << 0,
+	INPUT_BOUNDARY_END   = 1UL << 1,
 };
 
 /*
@@ -55,7 +55,7 @@ extern void freeInputFileResources (void);
 extern bool openInputFile (const char *const fileName, const langType language, MIO *mio, time_t mtime);
 extern MIO *getMio (const char *const fileName, const char *const openMode,
 				    bool memStreamRequired);
-extern void resetInputFile (const langType language);
+extern void resetInputFile (const langType language, bool resetLineFposMap_);
 extern void closeInputFile (void);
 extern void *getInputFileUserData(void);
 

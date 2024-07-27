@@ -78,8 +78,9 @@ static void makeTagForProperties (xmlNode *node,
 
 	str = node->name;
 	initTagEntry (&tag, (char *)str, K_PROPERTY);
-	tag.lineNumber = xmlGetLineNo (node);
-	tag.filePosition = getInputFilePositionForLine (tag.lineNumber);
+
+	unsigned long lineNumber = xmlGetLineNo (node);
+	updateTagLine (&tag, lineNumber, getInputFilePositionForLine (lineNumber));
 
 	makeTagEntry (&tag);
 }
@@ -177,7 +178,7 @@ static char* attachVersionIfExisting (struct sTagEntryInfo *tag, xmlNode *node)
 		}
 	}
 	if (version)
-		attachParserField (tag, false, Maven2Fields [F_VERSION].ftype, version);
+		attachParserField (tag, Maven2Fields [F_VERSION].ftype, version);
 	return version;
 }
 

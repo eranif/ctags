@@ -42,26 +42,56 @@ typedef uint64_t roleBitsType;
 /*  Information about the current tag candidate.
  */
 struct sTagEntryInfo {
+	/*
+	 * the bit fields parsers may access for setting DIRECTLY
+	 */
 	unsigned int lineNumberEntry:1;  /* pattern or line number entry */
 	unsigned int isFileScope    :1;  /* is tag visible only within input file? */
-	unsigned int isFileEntry    :1;  /* is this just an entry for a file name? */
 	unsigned int truncateLineAfterTag :1;  /* truncate tag line at end of tag name? */
-	unsigned int placeholder    :1;	 /* is used only for keeping corkIndex based scope chain.
-					    Put this entry to cork queue but
-					    don't print it to tags file. */
 	unsigned int skipAutoFQEmission:1; /* If a parser makes a fq tag for the
 										  current tag by itself, set this. */
+
+	/*
+	 * the bit fields parser may access for setting via accessor
+	 */
+	unsigned int placeholder    :1;	 /* is used only for keeping corkIndex based scope chain.
+					    Put this entry to cork queue but
+						the tag is not printed:
+						* not printed as a tag entry,
+						* never used as a part of automatically generated FQ tag, and
+						* not printed as a part of scope.
+						See getTagScopeInformation() and
+						getFullQualifiedScopeNameFromCorkQueue. */
+
+	/*
+	 * the bit fields only the main part can access.
+	 */
+	unsigned int isFileEntry    :1;  /* is this just an entry for a file name? */
 	unsigned int isPseudoTag:1;	/* Used only in xref output.
 								   If a tag is a pseudo, set this. */
 	unsigned int inCorkQueue:1;
+	unsigned int isInputFileNameShared: 1; /* shares the value for inputFileName.
+											* Set in the cork queue; don't touch this.*/
+	unsigned int isSourceFileNameShared: 1; /* shares the value for sourceFileName.
+											 * Set in the cork queue; don't touch this.*/
+	unsigned int boundaryInfo: 2; /* info about nested input stream */
+	unsigned int inIntevalTab:1;
 
-	unsigned long lineNumber;     /* line number of tag */
+	unsigned long lineNumber;     /* line number of tag;
+									 use updateTagLine() for updating this member. */
 	const char* pattern;	      /* pattern for locating input line
 				       * (may be NULL if not present) *//*  */
-	unsigned int boundaryInfo;    /* info about nested input stream */
 	MIOPos      filePosition;     /* file position of line containing tag */
 	langType langType;         /* language of input file */
-	const char *inputFileName;   /* name of input file */
+	const char *inputFileName;   /* name of input file.
+									You cannot modify the contents of buffer pointed
+									by this member of the tagEntryInfo returned from
+									getEntryInCorkQueue(). The buffer may be shared
+									between tag entries in the cork queue.
+
+									Further more, modifying this member of the
+									tagEntryInfo returned from getEntryInCorkQueue()
+									may cause a memory leak. */
 	const char *name;             /* name of the tag */
 	int kindIndex;	      /* kind descriptor */
 	uint8_t extra[ ((XTAG_COUNT) / 8) + 1 ];
@@ -98,7 +128,7 @@ struct sTagEntryInfo {
 #ifdef HAVE_LIBXML
 		const char* xpath;
 #endif
-		unsigned long endLine;
+		unsigned long _endLine;	/* Don't set directly. Use setTagEndLine() */
 		time_t epoch;
 #define NO_NTH_FIELD -1
 		short nth;
@@ -155,6 +185,8 @@ extern void initForeignRefTagEntry (tagEntryInfo *const e, const char *const nam
 									langType type,
 									int kindIndex, int roleIndex);
 extern void assignRole(tagEntryInfo *const e, int roleIndex);
+#define clearRoles(E) assignRole((E), ROLE_DEFINITION_INDEX)
+extern void unassignRole(tagEntryInfo *const e, int roleIndex);
 extern bool isRoleAssigned(const tagEntryInfo *const e, int roleIndex);
 
 extern int makeQualifiedTagEntry (const tagEntryInfo *const e);
@@ -218,6 +250,15 @@ int           anyKindsEntryInScopeRecursive (int corkIndex,
 											 const int * kinds, int count,
 											 bool onlyDefinitionTag);
 
+extern void    updateTagLine(tagEntryInfo *tag, unsigned long lineNumber, MIOPos filePosition);
+extern void    setTagEndLine (tagEntryInfo *tag, unsigned long endLine);
+extern void    setTagEndLineToCorkEntry (int corkIndex, unsigned long endLine);
+
+extern int     queryIntervalTabByLine(unsigned long lineNum);
+extern int     queryIntervalTabByRange(unsigned long startLine, unsigned long endLine);
+extern int     queryIntervalTabByCorkEntry(int corkIndex);
+extern bool    removeFromIntervalTabMaybe(int corkIndex);
+
 extern void    markTagExtraBit     (tagEntryInfo *const tag, xtagType extra);
 extern void    unmarkTagExtraBit   (tagEntryInfo *const tag, xtagType extra);
 extern bool isTagExtraBitMarked (const tagEntryInfo *const tag, xtagType extra);
@@ -225,21 +266,53 @@ extern bool isTagExtraBitMarked (const tagEntryInfo *const tag, xtagType extra);
 /* If any extra bit is on, return true. */
 extern bool isTagExtra (const tagEntryInfo *const tag);
 
+/*
+  In the following frequently used code-pattern:
+
+     tagEntryInfo *original = getEntryInCorkQueue (index);
+     tagEntryInfo xtag = *original;
+	 ... customize XTAG ...
+	 makeTagEntry (&xtag);
+
+   ORIGINAL and XTAG share some memory objects through their members.
+   TagEntryInfo::name is one of obvious ones.
+   When updating the member in the ... customize XTAG ... stage, you will
+   do:
+
+      vStringValue *xtag_name = vStringNewInit (xtags->name);
+	  ... customize XTAG_NAME with vString functions ...
+	  xtag.name = vStringValue (xtag_name);
+	  makeTagEntry (&xtag);
+	  vStringDelete (xtag_name);
+
+   There are some vague ones: extraDynamic and parserFieldsDynamic.
+   resetTagCorkState does:
+
+   - mark the TAG is not in cork queue: set inCorkQueue 0.
+   - copy,  clear, or dont touch the extraDynamic member.
+   - copy,  clear, or dont touch the parserFieldsDynamic member.
+
+*/
+
+enum resetTagMemberAction {
+	RESET_TAG_MEMBER_COPY,
+	RESET_TAG_MEMBER_CLEAR,
+	RESET_TAG_MEMBER_DONTTOUCH,
+};
+
+extern void resetTagCorkState (tagEntryInfo *const tag,
+							   enum resetTagMemberAction xtagAction,
+							   enum resetTagMemberAction parserFieldsAction);
+
 /* Functions for attaching parser specific fields
  *
- * Which function you should use?
- * ------------------------------
+ * Which function should I use?
+ * ----------------------------
  * Case A:
  *
  * If your parser uses the Cork API, and your parser called
  * makeTagEntry () already, you can use both
- * attachParserFieldToCorkEntry () and attachParserField ().  Your
- * parser has the cork index returned from makeTagEntry ().  With the
- * cork index, your parser can call attachParserFieldToCorkEntry ().
- * If your parser already call getEntryInCorkQueue () to get the tag
- * entry for the cork index, your parser can call attachParserField ()
- * with passing true for `inCorkQueue' parameter. attachParserField ()
- * is a bit faster than attachParserFieldToCorkEntry ().
+ * attachParserFieldToCorkEntry () and attachParserField ().
  *
  * attachParserField () and attachParserFieldToCorkEntry () duplicates
  * the memory object specified with `value' and stores the duplicated
@@ -252,11 +325,9 @@ extern bool isTagExtra (const tagEntryInfo *const tag);
  * Case B:
  *
  * If your parser called one of initTagEntry () family but didn't call
- * makeTagEntry () for a tagEntry yet, use attachParserField () with
- * false for `inCorkQueue' whether your parser uses the Cork API or
- * not.
+ * makeTagEntry () for a tagEntry yet, use attachParserField ().
  *
- * The parser (== caller) keeps the memory object specified with `value'
+ * The parser (== caller) must keep the memory object specified with `value'
  * till calling makeTagEntry (). The parser must free the memory object
  * after calling makeTagEntry () if it is allocated dynamically in the
  * parser side.
@@ -281,12 +352,13 @@ extern bool isTagExtra (const tagEntryInfo *const tag);
  * The other data type and the combination of types are not implemented yet.
  *
  */
-extern void attachParserField (tagEntryInfo *const tag, bool inCorkQueue, fieldType ftype, const char* value);
+extern void attachParserField (tagEntryInfo *const tag, fieldType ftype, const char* value);
 extern void attachParserFieldToCorkEntry (int index, fieldType ftype, const char* value);
-extern const char* getParserFieldValueForType (tagEntryInfo *const tag, fieldType ftype);
+extern const char* getParserFieldValueForType (const tagEntryInfo *const tag, fieldType ftype);
 
 extern int makePlaceholder (const char *const name);
-extern void markTagPlaceholder (tagEntryInfo *e, bool placeholder);
+extern void markTagAsPlaceholder (tagEntryInfo *e, bool placeholder);
+extern void markCorkEntryAsPlaceholder (int index, bool placeholder);
 
 /* Marking all tag entries entries under the scope specified
  * with index recursively.

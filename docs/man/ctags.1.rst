@@ -6,7 +6,7 @@ ctags
 
 Generate tag files for source code
 
-:Version: 6.0.0
+:Version: 6.1.0
 :Manual group: Universal Ctags
 :Manual section: 1
 
@@ -309,10 +309,14 @@ Output Format Options
 ``--output-format=(u-ctags|e-ctags|etags|xref|json)``
 	Specify the output format. The default is ``u-ctags``.
 	See :ref:`tags(5) <tags(5)>` for ``u-ctags`` and ``e-ctags``.
+	``TAG_OUTPUT_MODE`` pseudo tag indicates the choice,
+	``u-ctags`` or ``e-ctags``. See :ref:`ctags-client-tools(7) <ctags-client-tools(7)>`
+	for more about the pseudo tag.
+
 	See ``-e`` for ``etags``, and ``-x`` for ``xref``.
 	``json`` format is available only if
 	the ctags executable is built with ``libjansson``.
-	See :ref:`ctags-client-tools(7) <ctags-client-tools(7)>` for more about ``json`` format.
+	See :ref:`ctags-json-output(5) <ctags-json-output(5)>` for more about ``json`` format.
 
 ``-e``
 	Same as ``--output-format=etags``.
@@ -792,6 +796,9 @@ See "`TAG ENTRIES`_" about fields, kinds, roles, and extras.
 	('``\``') character when printing ``input:`` field.
 	The default is ``yes`` for the default "u-ctags" output format, and
 	``no`` for the other formats.
+
+	``TAG_OUTPUT_FILESEP`` pseudo tag is for representing  the choice of
+	filename separators with this option. See also :ref:`ctags-client-tools(7) <ctags-client-tools(7)>`.
 
 	This option is available on MS Windows only.
 
@@ -2178,7 +2185,6 @@ Preloading option files
 
 ``$XDG_CONFIG_HOME/ctags/*.ctags``, or ``$HOME/.config/ctags/*.ctags`` if
 ``$XDG_CONFIG_HOME`` is not defined
-(on other than MS Windows)
 
 ``$HOME/.ctags.d/*.ctags``
 
@@ -2219,7 +2225,6 @@ Default optlib path list
 
 ``$XDG_CONFIG_HOME/ctags``, or ``$HOME/.config/ctags`` if
 ``$XDG_CONFIG_HOME`` is not defined
-(on other than MS Windows)
 
 ``$HOME/.ctags.d``
 

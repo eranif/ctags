@@ -56,6 +56,13 @@ bool cxxScopeIsGlobal(void)
 	return (g_pScope->iCount < 1);
 }
 
+bool cxxScopeIsExported(void)
+{
+	if (g_pScope->pTail)
+		return g_pScope->pTail->bInternalScopeExported;
+	return false;
+}
+
 enum CXXScopeType cxxScopeGetType(void)
 {
 	if(g_pScope->iCount < 1)
@@ -112,6 +119,8 @@ unsigned int cxxScopeGetKind(void)
 			return CXXTagKindVARIABLE;
 		case CXXScopeTypeTypedef:
 			return CXXTagKindTYPEDEF;
+		case CXXScopeTypeModule:
+			return CXXTagCPPKindMODULE;
 		default:
 			CXX_DEBUG_ASSERT(false,"Unhandled scope type!");
 			break;
@@ -224,13 +233,18 @@ void cxxScopeSetAccess(enum CXXScopeAccess eAccess)
 void cxxScopePushTop(CXXToken * t)
 {
 	CXX_DEBUG_ASSERT(
-			t->eType == CXXTokenTypeIdentifier,
+			cxxTokenTypeIs(t, CXXTokenTypeIdentifier),
 			"The scope name must be an identifier"
 		);
 	CXX_DEBUG_ASSERT(
 			t->pszWord,
 			"The scope name should have a text"
 		);
+
+	// Inherit the export'ed status from the parent scope.
+	// You can override the inherited status with cxxScopePushExported().
+	if (g_pScope->pTail && g_pScope->pTail->bInternalScopeExported)
+		t->bInternalScopeExported = true;
 
 	cxxTokenChainAppend(g_pScope,t);
 	g_bScopeNameDirty = true;
@@ -269,6 +283,18 @@ void cxxScopePush(
 	t->uInternalScopeType = (unsigned char)eScopeType;
 	t->uInternalScopeAccess = (unsigned char)eInitialAccess;
 	cxxScopePushTop(t);
+}
+
+void cxxScopePushExported(
+		CXXToken * t,
+		enum CXXScopeType eScopeType,
+		enum CXXScopeAccess eInitialAccess,
+		bool exported
+	)
+{
+	cxxScopePush(t, eScopeType, eInitialAccess);
+	// Overrite the default value inherited from the parent scope.
+	t->bInternalScopeExported = exported;
 }
 
 void cxxScopePop(void)

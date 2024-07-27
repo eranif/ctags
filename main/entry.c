@@ -44,6 +44,7 @@
 #include "field.h"
 #include "fmt_p.h"
 #include "kind.h"
+#include "interval_tree_generic.h"
 #include "nestlevel.h"
 #include "options_p.h"
 #include "ptag_p.h"
@@ -74,7 +75,7 @@
 
 /*  Hack for ridiculous practice of Microsoft Visual C++.
  */
-#if defined (WIN32) && defined (_MSC_VER)
+#if defined (_WIN32) && defined (_MSC_VER)
 # define chsize         _chsize
 # define open           _open
 # define close          _close
@@ -95,6 +96,7 @@ typedef struct eTagFile {
 	int cork;
 	unsigned int corkFlags;
 	ptrArray *corkQueue;
+	struct rb_root intervaltab;
 
 	bool patternCacheValid;
 } tagFile;
@@ -104,6 +106,8 @@ typedef struct sTagEntryInfoX  {
 	int corkIndex;
 	struct rb_root symtab;
 	struct rb_node symnode;
+	struct rb_node intervalnode;
+	unsigned long __intervalnode_subtree_last;
 } tagEntryInfoX;
 
 /*
@@ -111,15 +115,22 @@ typedef struct sTagEntryInfoX  {
 */
 
 static tagFile TagFile = {
-    NULL,               /* tag file name */
-    NULL,               /* tag file directory (absolute) */
-    NULL,               /* file pointer */
-    { 0, 0 },           /* numTags */
-    { 0, 0 },        /* max */
-    NULL,                /* vLine */
-    .cork = false,
-    .corkQueue = NULL,
-    .patternCacheValid = false,
+	NULL,               /* tag file name */
+	NULL,               /* tag file directory (absolute) */
+	NULL,               /* file pointer */
+	{ 0, 0 },           /* numTags */
+	{ 0, 0 },        /* max */
+	NULL,                /* vLine */
+	.cork = false,
+	.corkQueue = NULL,
+	/* .intervaltab = RB_ROOT,
+	 *
+	 * msvc doesn't accept the above expression:
+	 *
+	 *   main\entry.c(128) : error C2099: initializer is not a constant
+	 *
+	 */
+	.patternCacheValid = false,
 };
 
 static bool TagsToStdout = false;
@@ -134,6 +145,13 @@ extern int truncate (const char *path, off_t length);
 #ifdef NEED_PROTO_FTRUNCATE
 extern int ftruncate (int fd, off_t length);
 #endif
+
+#define INTERVAL_START(node) ((node)->slot.lineNumber)
+#define INTERVAL_END(node)   ((node)->slot.extensionFields._endLine)
+
+INTERVAL_TREE_DEFINE(tagEntryInfoX, intervalnode,
+					 unsigned long, __intervalnode_subtree_last,
+					 INTERVAL_START, INTERVAL_END, /*static*/, intervaltab)
 
 /*
 *   FUNCTION DEFINITIONS
@@ -200,7 +218,7 @@ extern void makeFileTag (const char *const fileName)
 		   unnecessary read line loop. */
 		while (readLineFromInputFile () != NULL)
 			; /* Do nothing */
-		tag.extensionFields.endLine = getInputLineNumber ();
+		setTagEndLine(&tag, getInputLineNumber ());
 	}
 
 	if (isFieldEnabled (FIELD_EPOCH))
@@ -669,7 +687,7 @@ static size_t appendInputLine (int putc_func (char , void *), const char *const 
 		const int next = *(p + 1);
 		const int c = *p;
 
-		if (c == CRETURN  ||  c == NEWLINE)
+		if (c == '\r'  ||  c == '\n')
 			break;
 
 		if (patternLengthLimit != 0 && length >= patternLengthLimit &&
@@ -683,10 +701,10 @@ static size_t appendInputLine (int putc_func (char , void *), const char *const 
 		}
 		/*  If character is '\', or a terminal '$', then quote it.
 		 */
-		if (c == BACKSLASH  ||  c == (Option.backward ? '?' : '/')  ||
-			(c == '$'  &&  (next == NEWLINE  ||  next == CRETURN)))
+		if (c == '\\'  ||  c == (Option.backward ? '?' : '/')  ||
+			(c == '$'  &&  (next == '\n'  ||  next == '\r')))
 		{
-			putc_func (BACKSLASH, data);
+			putc_func ('\\', data);
 			++length;
 		}
 		putc_func (c, data);
@@ -712,7 +730,7 @@ static int vstring_puts (const char* s, void *data)
 }
 
 #ifdef DEBUG
-static bool isPosSet(MIOPos pos)
+static bool isPosSet (MIOPos pos)
 {
 	char * p = (char *)&pos;
 	bool r = false;
@@ -725,7 +743,7 @@ static bool isPosSet(MIOPos pos)
 #endif
 
 extern char *readLineFromBypassForTag (vString *const vLine, const tagEntryInfo *const tag,
-				   long *const pSeekValue)
+									   long *const pSeekValue)
 {
 	Assert (isPosSet (tag->filePosition) || (tag->pattern == NULL));
 	return readLineFromBypass (vLine, tag->filePosition, pSeekValue);
@@ -814,7 +832,7 @@ static char* getFullQualifiedScopeNameFromCorkQueue (const tagEntryInfo * inner_
 }
 
 extern void getTagScopeInformation (tagEntryInfo *const tag,
-				    const char **kind, const char **name)
+									const char **kind, const char **name)
 {
 	if (kind)
 		*kind = NULL;
@@ -823,9 +841,9 @@ extern void getTagScopeInformation (tagEntryInfo *const tag,
 
 	const tagEntryInfo * scope = getEntryInCorkQueue (tag->extensionFields.scopeIndex);
 	if (tag->extensionFields.scopeKindIndex == KIND_GHOST_INDEX
-	    && tag->extensionFields.scopeName == NULL
-	    && scope
-	    && ptrArrayCount (TagFile.corkQueue) > 0)
+		&& tag->extensionFields.scopeName == NULL
+		&& scope
+		&& ptrArrayCount (TagFile.corkQueue) > 0)
 	{
 		char *full_qualified_scope_name = getFullQualifiedScopeNameFromCorkQueue(scope);
 		Assert (full_qualified_scope_name);
@@ -837,7 +855,7 @@ extern void getTagScopeInformation (tagEntryInfo *const tag,
 	}
 
 	if (tag->extensionFields.scopeKindIndex != KIND_GHOST_INDEX  &&
-	    tag->extensionFields.scopeName != NULL)
+		tag->extensionFields.scopeName != NULL)
 	{
 		if (kind)
 		{
@@ -855,9 +873,9 @@ extern void getTagScopeInformation (tagEntryInfo *const tag,
 
 
 static int   makePatternStringCommon (const tagEntryInfo *const tag,
-				      int (* putc_func) (char , void *),
-				      int (* puts_func) (const char* , void *),
-				      void *output)
+									  int (* putc_func) (char , void *),
+									  int (* puts_func) (const char* , void *),
+									  void *output)
 {
 	int length = 0;
 
@@ -874,8 +892,8 @@ static int   makePatternStringCommon (const tagEntryInfo *const tag,
 	static vString *cached_pattern;
 	static MIOPos   cached_location;
 	if (TagFile.patternCacheValid
-	    && (! tag->truncateLineAfterTag)
-	    && (memcmp (&tag->filePosition, &cached_location, sizeof(MIOPos)) == 0))
+		&& (! tag->truncateLineAfterTag)
+		&& (memcmp (&tag->filePosition, &cached_location, sizeof(MIOPos)) == 0))
 		return puts_func (vStringValue (cached_pattern), output);
 
 	line = readLineFromBypassForTag (TagFile.vLine, tag, NULL);
@@ -914,7 +932,7 @@ static int   makePatternStringCommon (const tagEntryInfo *const tag,
 	}
 
 	length += putc_func(searchChar, output);
-	if ((tag->boundaryInfo & BOUNDARY_START) == 0)
+	if ((tag->boundaryInfo & INPUT_BOUNDARY_START) == 0)
 		length += putc_func('^', output);
 	length += appendInputLine (putc_func, line, Option.patternLengthLimit,
 							   output, &omitted);
@@ -938,7 +956,7 @@ extern char* makePatternString (const tagEntryInfo *const tag)
 	return vStringDeleteUnwrap (pattern);
 }
 
-static tagField * tagFieldNew(fieldType ftype, const char *value, bool valueOwner)
+static tagField* tagFieldNew (fieldType ftype, const char *value, bool valueOwner)
 {
 	tagField *f = xMalloc (1, tagField);
 
@@ -979,11 +997,11 @@ static void attachParserFieldGeneric (tagEntryInfo *const tag, fieldType ftype, 
 	}
 }
 
-extern void attachParserField (tagEntryInfo *const tag, bool inCorkQueue, fieldType ftype, const char * value)
+extern void attachParserField (tagEntryInfo *const tag, fieldType ftype, const char * value)
 {
 	Assert (tag != NULL);
 
-	if (inCorkQueue)
+	if (tag->inCorkQueue)
 	{
 		const char * v;
 		v = eStrdup (value);
@@ -1003,7 +1021,7 @@ extern void attachParserFieldToCorkEntry (int index,
 {
 	tagEntryInfo * tag = getEntryInCorkQueue (index);
 	if (tag)
-		attachParserField (tag, true, ftype, value);
+		attachParserField (tag, ftype, value);
 }
 
 extern const tagField* getParserFieldForIndex (const tagEntryInfo * tag, int index)
@@ -1020,11 +1038,11 @@ extern const tagField* getParserFieldForIndex (const tagEntryInfo * tag, int ind
 	}
 }
 
-extern const char* getParserFieldValueForType (tagEntryInfo *const tag, fieldType ftype)
+extern const char* getParserFieldValueForType (const tagEntryInfo *const tag, fieldType ftype)
 {
-	for (int i = 0; i < tag->usedParserFields; i++)
+	for (unsigned int i = 0; i < tag->usedParserFields; i++)
 	{
-		const tagField *f = getParserFieldForIndex (tag, i);
+		const tagField *f = getParserFieldForIndex (tag, (int)i);
 		if (f && f->ftype == ftype)
 			return f->value;
 	}
@@ -1059,15 +1077,35 @@ static tagEntryInfo *newNilTagEntry (unsigned int corkFlags)
 	x->corkIndex = CORK_NIL;
 	x->symtab = RB_ROOT;
 	x->slot.kindIndex = KIND_FILE_INDEX;
+	x->slot.inputFileName = getInputFileName ();
+	x->slot.inputFileName = eStrdup (x->slot.inputFileName);
+	x->slot.sourceFileName = getSourceFileTagPath();
+	if (x->slot.sourceFileName)
+		x->slot.sourceFileName = eStrdup (x->slot.sourceFileName);
 	return &(x->slot);
 }
 
+static void copyExtraDynamic (const tagEntryInfo *const src, tagEntryInfo *const dst)
+{
+	if (dst->extraDynamic)
+	{
+		unsigned int n = countXtags () - XTAG_COUNT;
+		dst->extraDynamic = xCalloc ((n / 8) + 1, uint8_t);
+		memcpy (dst->extraDynamic, src->extraDynamic, (n / 8) + 1);
+		PARSER_TRASH_BOX(dst->extraDynamic, eFree);
+	}
+}
+
 static tagEntryInfoX *copyTagEntry (const tagEntryInfo *const tag,
-								   unsigned int corkFlags)
+									const char *shareInputFileName,
+									const char *sharedSourceFileName,
+									unsigned int corkFlags)
 {
 	tagEntryInfoX *x = xMalloc (1, tagEntryInfoX);
 	x->symtab = RB_ROOT;
 	x->corkIndex = CORK_NIL;
+	memset(&x->intervalnode, 0, sizeof (x->intervalnode));
+	x->__intervalnode_subtree_last = 0;
 	tagEntryInfo  *slot = (tagEntryInfo *)x;
 
 	*slot = *tag;
@@ -1075,7 +1113,17 @@ static tagEntryInfoX *copyTagEntry (const tagEntryInfo *const tag,
 	if (slot->pattern)
 		slot->pattern = eStrdup (slot->pattern);
 
-	slot->inputFileName = eStrdup (slot->inputFileName);
+	if (slot->inputFileName == getInputFileName ())
+	{
+		slot->inputFileName = shareInputFileName;
+		slot->isInputFileNameShared = 1;
+	}
+	else
+	{
+		slot->inputFileName = eStrdup (slot->inputFileName);
+		slot->isInputFileNameShared = 0;
+	}
+
 	slot->name = eStrdup (slot->name);
 	if (slot->extensionFields.access)
 		slot->extensionFields.access = eStrdup (slot->extensionFields.access);
@@ -1096,16 +1144,29 @@ static tagEntryInfoX *copyTagEntry (const tagEntryInfo *const tag,
 		slot->extensionFields.xpath = eStrdup (slot->extensionFields.xpath);
 #endif
 
+	copyExtraDynamic (tag, slot);
 	if (slot->extraDynamic)
+		PARSER_TRASH_BOX_TAKE_BACK(slot->extraDynamic);
+
+	if (slot->sourceFileName == NULL)
+		slot->isSourceFileNameShared = 0;
+	else if (strcmp(slot->sourceFileName, sharedSourceFileName) == 0)
 	{
-		int n = countXtags () - XTAG_COUNT;
-		slot->extraDynamic = xCalloc ((n / 8) + 1, uint8_t);
-		memcpy (slot->extraDynamic, tag->extraDynamic, (n / 8) + 1);
+		/* strcmp() is needed here.
+		 * sharedSourceFileName can be changed during parsing a file.
+		 * So we cannot use the condition like:
+		 *
+		 *    if (slot->sourceFileName == getSourceFileTagPath()) { ... }
+		 *
+		 */
+		slot->sourceFileName = sharedSourceFileName;
+		slot->isSourceFileNameShared = 1;
 	}
-
-	if (slot->sourceFileName)
+	else
+	{
 		slot->sourceFileName = eStrdup (slot->sourceFileName);
-
+		slot->isSourceFileNameShared = 0;
+	}
 
 	slot->usedParserFields = 0;
 	slot->parserFieldsDynamic = NULL;
@@ -1146,11 +1207,19 @@ static void deleteTagEnry (void *data)
 	tagEntryInfo *slot = data;
 
 	if (slot->kindIndex == KIND_FILE_INDEX)
+	{
+		eFree ((char *)slot->inputFileName);
+		if (slot->sourceFileName)
+			eFree ((char *)slot->sourceFileName);
 		goto out;
+	}
 
 	if (slot->pattern)
 		eFree ((char *)slot->pattern);
-	eFree ((char *)slot->inputFileName);
+
+	if (!slot->isInputFileNameShared)
+		eFree ((char *)slot->inputFileName);
+
 	eFree ((char *)slot->name);
 
 	if (slot->extensionFields.access)
@@ -1175,7 +1244,7 @@ static void deleteTagEnry (void *data)
 	if (slot->extraDynamic)
 		eFree (slot->extraDynamic);
 
-	if (slot->sourceFileName)
+	if (slot->sourceFileName && !slot->isSourceFileNameShared)
 		eFree ((char *)slot->sourceFileName);
 
 	clearParserFields (slot);
@@ -1497,7 +1566,7 @@ extern void registerEntry (int corkIndex)
 	}
 }
 
-extern void unregisterEntry(int corkIndex)
+extern void unregisterEntry (int corkIndex)
 {
 	Assert (TagFile.corkFlags & CORK_SYMTAB);
 	Assert (corkIndex != CORK_NIL);
@@ -1510,12 +1579,13 @@ extern void unregisterEntry(int corkIndex)
 
 }
 
-static int queueTagEntry(const tagEntryInfo *const tag)
+static int queueTagEntry (const tagEntryInfo *const tag)
 {
 	static bool warned;
 
 	int corkIndex;
-	tagEntryInfoX * entry = copyTagEntry (tag,
+	tagEntryInfo * nil = ptrArrayItem (TagFile.corkQueue, 0);
+	tagEntryInfoX * entry = copyTagEntry (tag, nil->inputFileName, nil->sourceFileName,
 										TagFile.corkFlags);
 
 	if (ptrArrayCount (TagFile.corkQueue) == (size_t)INT_MAX)
@@ -1536,7 +1606,80 @@ static int queueTagEntry(const tagEntryInfo *const tag)
 	entry->corkIndex = corkIndex;
 	entry->slot.inCorkQueue = 1;
 
+	/* Don't put FQ tags to interval table.
+	 * About placeholder, a parser should call
+	 * removeFromIntervalTabMaybe() explicitly.
+	 */
+	if (! isTagExtraBitMarked (&entry->slot, XTAG_FILE_NAMES)
+		&& entry->slot.extensionFields._endLine > entry->slot.lineNumber
+		&& !isTagExtraBitMarked (tag, XTAG_QUALIFIED_TAGS))
+	{
+		intervaltab_insert(entry, &TagFile.intervaltab);
+		entry->slot.inIntevalTab = 1;
+	}
 	return corkIndex;
+}
+
+extern void updateTagLine (tagEntryInfo *tag, unsigned long lineNumber,
+						   MIOPos filePosition)
+{
+	tagEntryInfoX *entry = NULL;
+	if (tag->inIntevalTab)
+	{
+		entry = (tagEntryInfoX *)tag;
+		removeFromIntervalTabMaybe (entry->corkIndex);
+	}
+
+	tag->lineNumber = lineNumber;
+	tag->filePosition = filePosition;
+	tag->boundaryInfo = getNestedInputBoundaryInfo (lineNumber);
+
+	if (entry && tag->lineNumber < tag->extensionFields._endLine)
+	{
+		intervaltab_insert(entry, &TagFile.intervaltab);
+		tag->inIntevalTab = 1;
+	}
+}
+
+extern void setTagEndLine(tagEntryInfo *tag, unsigned long endLine)
+{
+	if (endLine != 0 && endLine < tag->lineNumber)
+	{
+		error (WARNING,
+			   "given end line (%lu) for the tag (%s) in the file (%s) is smaller than its start line: %lu",
+			   endLine,
+			   tag->name,
+			   tag->inputFileName,
+			   tag->lineNumber);
+		return;
+	}
+
+	if (isTagExtraBitMarked (tag, XTAG_FILE_NAMES)
+		|| !tag->inCorkQueue
+		|| isTagExtraBitMarked (tag, XTAG_QUALIFIED_TAGS))
+	{
+		tag->extensionFields._endLine = endLine;
+		return;
+	}
+
+	tagEntryInfoX *entry = (tagEntryInfoX *)tag;
+
+	if (tag->inIntevalTab)
+		removeFromIntervalTabMaybe (entry->corkIndex);
+
+	tag->extensionFields._endLine = endLine;
+	if (endLine > tag->lineNumber)
+	{
+		intervaltab_insert(entry, &TagFile.intervaltab);
+		tag->inIntevalTab = 1;
+	}
+}
+
+extern void setTagEndLineToCorkEntry (int corkIndex, unsigned long endLine)
+{
+	tagEntryInfo *entry = getEntryInCorkQueue (corkIndex);
+	if (entry)
+		setTagEndLine (entry, endLine);
 }
 
 extern void setupWriter (void *writerClientData)
@@ -1549,9 +1692,12 @@ extern bool teardownWriter (const char *filename)
 	return writerTeardown (TagFile.mio, filename);
 }
 
-static bool isTagWritable(const tagEntryInfo *const tag)
+static bool isTagWritable (const tagEntryInfo *const tag)
 {
 	if (tag->placeholder)
+		return false;
+
+	if (! isLanguageEnabled(tag->langType) )
 		return false;
 
 	if (! isLanguageKindEnabled(tag->langType, tag->kindIndex))
@@ -1615,7 +1761,7 @@ static void writeTagEntry (const tagEntryInfo *const tag)
 
 	DebugStatement ( debugEntry (tag); )
 
-#ifdef WIN32
+#ifdef _WIN32
 	if (getFilenameSeparator(Option.useSlashAsFilenameSeparator) == FILENAME_SEP_USE_SLASH)
 	{
 		Assert (((const tagEntryInfo *)tag)->inputFileName);
@@ -1630,8 +1776,8 @@ static void writeTagEntry (const tagEntryInfo *const tag)
 #endif
 
 	if (includeExtensionFlags ()
-	    && isXtagEnabled (XTAG_QUALIFIED_TAGS)
-	    && doesInputLanguageRequestAutomaticFQTag (tag)
+		&& isXtagEnabled (XTAG_QUALIFIED_TAGS)
+		&& doesInputLanguageRequestAutomaticFQTag (tag)
 		&& !isTagExtraBitMarked (tag, XTAG_QUALIFIED_TAGS)
 		&& !tag->skipAutoFQEmission)
 	{
@@ -1652,9 +1798,9 @@ static void writeTagEntry (const tagEntryInfo *const tag)
 }
 
 extern bool writePseudoTag (const ptagDesc *desc,
-			       const char *const fileName,
-			       const char *const pattern,
-			       const char *const parserName)
+							const char *const fileName,
+							const char *const pattern,
+							const char *const parserName)
 {
 	int length;
 
@@ -1671,7 +1817,7 @@ extern bool writePseudoTag (const ptagDesc *desc,
 	return true;
 }
 
-extern void corkTagFile(unsigned int corkFlags)
+extern void corkTagFile (unsigned int corkFlags)
 {
 	TagFile.cork++;
 	if (TagFile.cork == 1)
@@ -1680,10 +1826,11 @@ extern void corkTagFile(unsigned int corkFlags)
 		TagFile.corkQueue = ptrArrayNew (deleteTagEnry);
 		tagEntryInfo *nil = newNilTagEntry (corkFlags);
 		ptrArrayAdd (TagFile.corkQueue, nil);
+		TagFile.intervaltab = RB_ROOT;
 	}
 }
 
-extern void uncorkTagFile(void)
+extern void uncorkTagFile (void)
 {
 	unsigned int i;
 
@@ -1702,7 +1849,7 @@ extern void uncorkTagFile(void)
 		writeTagEntry (tag);
 
 		if (doesInputLanguageRequestAutomaticFQTag (tag)
-		    && isXtagEnabled (XTAG_QUALIFIED_TAGS)
+			&& isXtagEnabled (XTAG_QUALIFIED_TAGS)
 			&& !isTagExtraBitMarked (tag, XTAG_QUALIFIED_TAGS)
 			&& !tag->skipAutoFQEmission
 			&& ((tag->extensionFields.scopeKindIndex != KIND_GHOST_INDEX
@@ -1718,7 +1865,7 @@ extern void uncorkTagFile(void)
 	TagFile.corkQueue = NULL;
 }
 
-extern tagEntryInfo *getEntryInCorkQueue   (int n)
+extern tagEntryInfo *getEntryInCorkQueue (int n)
 {
 	if ((CORK_NIL < n) && (((size_t)n) < ptrArrayCount (TagFile.corkQueue)))
 		return ptrArrayItem (TagFile.corkQueue, n);
@@ -1733,14 +1880,21 @@ extern tagEntryInfo *getEntryOfNestingLevel (const NestingLevel *nl)
 	return getEntryInCorkQueue (nl->corkIndex);
 }
 
-extern size_t        countEntryInCorkQueue (void)
+extern size_t countEntryInCorkQueue (void)
 {
 	return ptrArrayCount (TagFile.corkQueue);
 }
 
-extern void markTagPlaceholder (tagEntryInfo *e, bool placeholder)
+extern void markTagAsPlaceholder (tagEntryInfo *e, bool placeholder)
 {
 	e->placeholder = placeholder;
+}
+
+extern void markCorkEntryAsPlaceholder (int index, bool placeholder)
+{
+	tagEntryInfo *e = getEntryInCorkQueue(index);
+	if (e)
+		markTagAsPlaceholder(e, placeholder);
 }
 
 extern int makePlaceholder (const char *const name)
@@ -1748,7 +1902,7 @@ extern int makePlaceholder (const char *const name)
 	tagEntryInfo e;
 
 	initTagEntry (&e, name, KIND_GHOST_INDEX);
-	markTagPlaceholder(&e, true);
+	markTagAsPlaceholder(&e, true);
 
 	/*
 	 * makePlaceholder may be called even before reading any bytes
@@ -1776,8 +1930,9 @@ extern int makeTagEntry (const tagEntryInfo *const tag)
 	if (tag->name [0] == '\0' && (!tag->placeholder))
 	{
 		if (!doesInputLanguageAllowNullTag())
-			error (WARNING, "ignoring null tag in %s(line: %lu)",
-			       getInputFileName (), tag->lineNumber);
+			error (NOTICE, "ignoring null tag in %s(line: %lu, language: %s)",
+				   getInputFileName (), tag->lineNumber,
+				   getLanguageName (tag->langType));
 		goto out;
 	}
 
@@ -1860,21 +2015,20 @@ extern int makeQualifiedTagEntry (const tagEntryInfo *const e)
 extern void setTagPositionFromTag (tagEntryInfo *const dst,
 								   const tagEntryInfo *const src)
 {
-		dst->lineNumber = src->lineNumber;
-		dst->boundaryInfo = src->boundaryInfo;
-		dst->filePosition = src->filePosition;
+	updateTagLine (dst, src->lineNumber, src->filePosition);
+	dst->boundaryInfo = src->boundaryInfo;
 }
 
 static void initTagEntryFull (tagEntryInfo *const e, const char *const name,
-			      unsigned long lineNumber,
-			      langType langType_,
-			      MIOPos      filePosition,
-			      const char *inputFileName,
-			      int kindIndex,
-			      roleBitsType roleBits,
-			      const char *sourceFileName,
-			      langType sourceLangType,
-			      long sourceLineNumberDifference)
+							  unsigned long lineNumber,
+							  langType langType_,
+							  MIOPos      filePosition,
+							  const char *inputFileName,
+							  int kindIndex,
+							  roleBitsType roleBits,
+							  const char *sourceFileName,
+							  langType sourceLangType,
+							  long sourceLineNumberDifference)
 {
 	int i;
 
@@ -1937,7 +2091,7 @@ extern void initTagEntry (tagEntryInfo *const e, const char *const name,
 }
 
 extern void initRefTagEntry (tagEntryInfo *const e, const char *const name,
-			     int kindIndex, int roleIndex)
+							 int kindIndex, int roleIndex)
 {
 	initForeignRefTagEntry (e, name, getInputLanguage (), kindIndex, roleIndex);
 }
@@ -1965,7 +2119,7 @@ extern void initForeignRefTagEntry (tagEntryInfo *const e, const char *const nam
 			 getSourceLineNumber() - getInputLineNumber ());
 }
 
-static void    markTagExtraBitFull     (tagEntryInfo *const tag, xtagType extra, bool mark)
+static void markTagExtraBitFull (tagEntryInfo *const tag, xtagType extra, bool mark)
 {
 	unsigned int index;
 	unsigned int offset;
@@ -1990,8 +2144,8 @@ static void    markTagExtraBitFull     (tagEntryInfo *const tag, xtagType extra,
 	else
 	{
 		Assert (extra < countXtags ());
-
-		int n = countXtags () - XTAG_COUNT;
+		Assert (XTAG_COUNT <= countXtags ());
+		unsigned int n = countXtags () - XTAG_COUNT;
 		tag->extraDynamic = xCalloc ((n / 8) + 1, uint8_t);
 		if (!tag->inCorkQueue)
 			PARSER_TRASH_BOX(tag->extraDynamic, eFree);
@@ -2005,12 +2159,12 @@ static void    markTagExtraBitFull     (tagEntryInfo *const tag, xtagType extra,
 		slot [ index ] &= ~(1 << offset);
 }
 
-extern void    markTagExtraBit     (tagEntryInfo *const tag, xtagType extra)
+extern void markTagExtraBit (tagEntryInfo *const tag, xtagType extra)
 {
 	markTagExtraBitFull (tag, extra, true);
 }
 
-extern void    unmarkTagExtraBit    (tagEntryInfo *const tag, xtagType extra)
+extern void unmarkTagExtraBit (tagEntryInfo *const tag, xtagType extra)
 {
 	markTagExtraBitFull (tag, extra, false);
 }
@@ -2049,7 +2203,43 @@ extern bool isTagExtra (const tagEntryInfo *const tag)
 	return false;
 }
 
-static void assignRoleFull(tagEntryInfo *const e, int roleIndex, bool assign)
+extern void resetTagCorkState (tagEntryInfo *const tag,
+							   enum resetTagMemberAction xtagAction,
+							   enum resetTagMemberAction parserFieldsAction)
+{
+	tagEntryInfo original = *tag;
+
+	tag->inCorkQueue = 0;
+
+	switch (xtagAction)
+	{
+	case RESET_TAG_MEMBER_COPY:
+		copyExtraDynamic (&original, tag);
+		break;
+	case RESET_TAG_MEMBER_CLEAR:
+		tag->extraDynamic = NULL;
+		break;
+	case RESET_TAG_MEMBER_DONTTOUCH:
+		break;
+	}
+
+	switch (parserFieldsAction)
+	{
+	case RESET_TAG_MEMBER_COPY:
+		tag->usedParserFields = 0;
+		tag->parserFieldsDynamic = NULL;
+		copyParserFields (&original, tag);
+		break;
+	case RESET_TAG_MEMBER_CLEAR:
+		tag->usedParserFields = 0;
+		tag->parserFieldsDynamic = NULL;
+		break;
+	case RESET_TAG_MEMBER_DONTTOUCH:
+		break;
+	}
+}
+
+static void assignRoleFull (tagEntryInfo *const e, int roleIndex, bool assign)
 {
 	if (roleIndex == ROLE_DEFINITION_INDEX)
 	{
@@ -2073,12 +2263,17 @@ static void assignRoleFull(tagEntryInfo *const e, int roleIndex, bool assign)
 		AssertNotReached();
 }
 
-extern void assignRole(tagEntryInfo *const e, int roleIndex)
+extern void assignRole (tagEntryInfo *const e, int roleIndex)
 {
 	assignRoleFull(e, roleIndex, true);
 }
 
-extern bool isRoleAssigned(const tagEntryInfo *const e, int roleIndex)
+extern void unassignRole (tagEntryInfo *const e, int roleIndex)
+{
+	assignRoleFull(e, roleIndex, false);
+}
+
+extern bool isRoleAssigned (const tagEntryInfo *const e, int roleIndex)
 {
 	if (roleIndex == ROLE_DEFINITION_INDEX)
 		return (!e->extensionFields.roleBits);
@@ -2086,7 +2281,7 @@ extern bool isRoleAssigned(const tagEntryInfo *const e, int roleIndex)
 		return (e->extensionFields.roleBits & makeRoleBit(roleIndex));
 }
 
-extern unsigned long numTagsAdded(void)
+extern unsigned long numTagsAdded (void)
 {
 	return TagFile.numTags.added;
 }
@@ -2096,7 +2291,7 @@ extern void setNumTagsAdded (unsigned long nadded)
 	TagFile.numTags.added = nadded;
 }
 
-extern unsigned long numTagsTotal(void)
+extern unsigned long numTagsTotal (void)
 {
 	return TagFile.numTags.added + TagFile.numTags.prev;
 }
@@ -2106,7 +2301,7 @@ extern unsigned long maxTagsLine (void)
 	return (unsigned long)TagFile.max.line;
 }
 
-extern void invalidatePatternCache(void)
+extern void invalidatePatternCache (void)
 {
 	TagFile.patternCacheValid = false;
 }
@@ -2114,7 +2309,7 @@ extern void invalidatePatternCache(void)
 extern void tagFilePosition (MIOPos *p)
 {
 	/* mini-geany doesn't set TagFile.mio. */
-	if 	(TagFile.mio == NULL)
+	if (TagFile.mio == NULL)
 		return;
 
 	if (mio_getpos (TagFile.mio, p) == -1)
@@ -2125,13 +2320,18 @@ extern void tagFilePosition (MIOPos *p)
 extern void setTagFilePosition (MIOPos *p, bool truncation)
 {
 	/* mini-geany doesn't set TagFile.mio. */
-	if 	(TagFile.mio == NULL)
+	if (TagFile.mio == NULL)
 		return;
 
 
 	long t0 = 0;
-	if (truncation)
+	if (truncation) {
 		t0 = mio_tell (TagFile.mio);
+		if (t0 == -1)
+			error (FATAL|PERROR,
+				   "failed to tell the file position of the tag file (t0)\n");
+	}
+
 
 	if (mio_setpos (TagFile.mio, p) == -1)
 		error (FATAL|PERROR,
@@ -2140,6 +2340,10 @@ extern void setTagFilePosition (MIOPos *p, bool truncation)
 	if (truncation)
 	{
 		long t1 = mio_tell (TagFile.mio);
+		if (t1 == -1)
+			error (FATAL|PERROR,
+				   "failed to tell the file position of the tag file (t1)\n");
+
 		if (!mio_try_resize (TagFile.mio, (size_t)t1))
 			error (FATAL|PERROR,
 				   "failed to truncate the tag file %ld -> %ld\n", t0, t1);
@@ -2151,14 +2355,58 @@ extern const char* getTagFileDirectory (void)
 	return TagFile.directory;
 }
 
-static bool markAsPlaceholder  (int index, tagEntryInfo *e, void *data CTAGS_ATTR_UNUSED)
+static bool markAsPlaceholderRecursively (int index, tagEntryInfo *e, void *data CTAGS_ATTR_UNUSED)
 {
-	e->placeholder = 1;
+	markTagAsPlaceholder (e, true);
 	markAllEntriesInScopeAsPlaceholder (index);
 	return true;
 }
 
 extern void markAllEntriesInScopeAsPlaceholder (int index)
 {
-	foreachEntriesInScope (index, NULL, markAsPlaceholder, NULL);
+	foreachEntriesInScope (index, NULL, markAsPlaceholderRecursively, NULL);
+}
+
+extern int queryIntervalTabByLine(unsigned long lineNum)
+{
+	return queryIntervalTabByRange(lineNum, lineNum);
+}
+
+extern int queryIntervalTabByRange(unsigned long start, unsigned long end)
+{
+	int index = CORK_NIL;
+
+	tagEntryInfoX *ex = intervaltab_iter_first(&TagFile.intervaltab, start, end);
+	while (ex) {
+		index = ex->corkIndex;
+		ex = intervaltab_iter_next(ex, start, end);
+	}
+	return index;
+}
+
+extern int queryIntervalTabByCorkEntry(int corkIndex)
+{
+	Assert (corkIndex != CORK_NIL);
+
+	tagEntryInfoX *ex = ptrArrayItem (TagFile.corkQueue, corkIndex);
+	tagEntryInfo *e = &ex->slot;
+
+	if (e->extensionFields._endLine == 0)
+		return queryIntervalTabByLine(e->lineNumber);
+	return queryIntervalTabByRange(e->lineNumber, e->extensionFields._endLine);
+}
+
+extern bool removeFromIntervalTabMaybe(int corkIndex)
+{
+	if (corkIndex == CORK_NIL)
+		return false;
+
+	tagEntryInfoX *ex = ptrArrayItem (TagFile.corkQueue, corkIndex);
+	tagEntryInfo *e = &ex->slot;
+	if (!e->inIntevalTab)
+		return false;
+
+	intervaltab_remove(ex, &TagFile.intervaltab);
+	e->inIntevalTab = 0;
+	return true;
 }

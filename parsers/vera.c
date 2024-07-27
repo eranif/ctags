@@ -739,6 +739,7 @@ static void addOtherFields (tagEntryInfo* const tag, const tagType type,
 		case TAG_PROTOTYPE:
 			if (vStringLength (Signature) > 0)
 				tag->extensionFields.signature = vStringValue (Signature);
+			/* Fallthrough */
 		case TAG_CLASS:
 		case TAG_ENUM:
 		case TAG_ENUMERATOR:
@@ -916,8 +917,7 @@ static int makeTag (const tokenInfo *const token,
 		kind  = kindIndexForType(type);
 		initTagEntry (&e, vStringValue (token->name), kind);
 
-		e.lineNumber	= token->lineNumber;
-		e.filePosition	= token->filePosition;
+		updateTagLine (&e, token->lineNumber, token->filePosition);
 		e.isFileScope	= isFileScope;
 		if (e.isFileScope)
 			markTagExtraBit (&e, XTAG_FILE_SCOPE);
@@ -1133,7 +1133,7 @@ static void skipToMatch (const char *const pair)
 	while (matchLevel > 0  &&  (c = skipToNonWhite ()) != EOF)
 	{
 		if (CollectingSignature)
-			vStringPut (Signature, c);
+			cppVStringPut (Signature, c);
 		if (c == begin)
 		{
 			++matchLevel;
@@ -1231,11 +1231,11 @@ static void readIdentifier (tokenInfo *const token, const int firstChar)
 
 	do
 	{
-		vStringPut (name, c);
+		cppVStringPut (name, c);
 		if (CollectingSignature)
 		{
 			if (!first)
-				vStringPut (Signature, c);
+				cppVStringPut (Signature, c);
 			first = false;
 		}
 		c = cppGetc ();
@@ -1273,12 +1273,8 @@ static void setAccess (statementInfo *const st, const accessType access)
 
 static void addParentClass (statementInfo *const st, tokenInfo *const token)
 {
-	if (vStringLength (token->name) > 0  &&
-		vStringLength (st->parentClasses) > 0)
-	{
-		vStringPut (st->parentClasses, ',');
-	}
-	vStringCat (st->parentClasses, token->name);
+	if (vStringLength (token->name) > 0)
+		vStringJoin (st->parentClasses, ',', token->name);
 }
 
 static void readParents (statementInfo *const st, const int qualifier)
@@ -1582,7 +1578,7 @@ static int parseParens (statementInfo *const st, parenInfo *const info)
 	do
 	{
 		int c = skipToNonWhite ();
-		vStringPut (Signature, c);
+		cppVStringPut (Signature, c);
 
 		switch (c)
 		{
@@ -1915,7 +1911,7 @@ static void parseGeneralToken (statementInfo *const st, const int c)
 		if (c2 != '=')
 			cppUngetc (c2);
 	}
-	else if (c == STRING_SYMBOL) {
+	else if (c == CPP_STRING_SYMBOL) {
 		setToken(st, TOKEN_NONE);
 	}
 }
@@ -2014,9 +2010,7 @@ static void checkStatementEnd (statementInfo *const st, int corkIndex)
 {
 	const tokenInfo *const token = activeToken (st);
 
-	tagEntryInfo *e = getEntryInCorkQueue (corkIndex);
-	if (e)
-		e->extensionFields.endLine = token->lineNumber;
+	setTagEndLineToCorkEntry (corkIndex, token->lineNumber);
 
 	if (isType (token, TOKEN_COMMA))
 		reinitStatement (st, true);

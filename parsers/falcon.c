@@ -52,7 +52,7 @@ static bool isIdentifierChar (int c)
 
 static const unsigned char *skipSpace (const unsigned char *cp)
 {
-    while (isspace ((int) *cp))
+    while (isspace (*cp))
         ++cp;
 
     return cp;
@@ -81,9 +81,9 @@ static void findFalconTags (void)
             cp += 8;
             cp = skipSpace (cp);
 
-            while (isIdentifierChar ((int) *cp))
+            while (isIdentifierChar (*cp))
             {
-                vStringPut (name, (int) *cp);
+                vStringPut (name, *cp);
                 ++cp;
             }
             makeSimpleTag (name, K_FUNCTION);
@@ -94,9 +94,9 @@ static void findFalconTags (void)
             cp += 5;
             cp = skipSpace (cp);
 
-            while (isIdentifierChar ((int) *cp))
+            while (isIdentifierChar (*cp))
             {
-                vStringPut (name, (int) *cp);
+                vStringPut (name, *cp);
                 ++cp;
             }
             makeSimpleTag (name, K_CLASS);
@@ -107,9 +107,9 @@ static void findFalconTags (void)
             cp += 4;
             cp = skipSpace (cp);
 
-            while (isIdentifierChar ((int) *cp))
+            while (isIdentifierChar (*cp))
             {
-                vStringPut (name, (int) *cp);
+                vStringPut (name, *cp);
                 ++cp;
             }
             makeSimpleTag (name, K_NAMESPACE);
@@ -120,9 +120,9 @@ static void findFalconTags (void)
             cp += 12;
             cp = skipSpace (cp);
 
-            while (isIdentifierChar ((int) *cp))
+            while (isIdentifierChar (*cp))
             {
-                vStringPut (name, (int) *cp);
+                vStringPut (name, *cp);
                 ++cp;
             }
             makeSimpleTag (name, K_NAMESPACE);

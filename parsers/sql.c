@@ -87,6 +87,7 @@ enum eKeywordId {
 	KEYWORD_drop,
 	KEYWORD_else,
 	KEYWORD_elseif,
+	KEYWORD_elsif,
 	KEYWORD_end,
 	KEYWORD_endif,
 	KEYWORD_event,
@@ -177,7 +178,12 @@ typedef enum eTokenType {
 	TOKEN_CLOSE_SQUARE,
 	TOKEN_TILDE,
 	TOKEN_FORWARD_SLASH,
-	TOKEN_EQUAL
+	TOKEN_EQUAL,
+	TOKEN_PREPROC_IF,
+	TOKEN_PREPROC_ELSIF,
+	TOKEN_PREPROC_ELSE,
+	TOKEN_PREPROC_THEN,
+	TOKEN_PREPROC_END,
 } tokenType;
 
 typedef struct sTokenInfoSQL {
@@ -294,6 +300,7 @@ static const keywordTable SqlKeywordTable [] = {
 	{ "drop",							KEYWORD_drop			      },
 	{ "else",							KEYWORD_else			      },
 	{ "elseif",							KEYWORD_elseif			      },
+	{ "elsif",							KEYWORD_elsif			      },
 	{ "end",							KEYWORD_end				      },
 	{ "endif",							KEYWORD_endif			      },
 	{ "event",							KEYWORD_event			      },
@@ -358,7 +365,7 @@ static const keywordTable SqlKeywordTable [] = {
 	{ "without",						KEYWORD_without			      },
 };
 
-const static struct keywordGroup predefinedInquiryDirective = {
+static const struct keywordGroup predefinedInquiryDirective = {
 	.value = KEYWORD_inquiry_directive,
 	.addingUnlessExisting = false,
 	.keywords = {
@@ -431,6 +438,7 @@ static struct SqlReservedWord SqlReservedWord [SQLKEYWORD_COUNT] = {
 	[KEYWORD_drop]          = {1 & 0&1&1&1 & 1&1 & 1},
 	[KEYWORD_else]          = {1 & 1&1&1&1 & 1&1 & 1},
 	[KEYWORD_elseif]        = {1 & 0&0&0&0 & 0&0 & 1},
+	[KEYWORD_elsif]         = {0 & 0&0&0&0 & 0&1 & 0},
 	[KEYWORD_end]           = {0 & 1&1&1&1 & 0&1 & 1},
 	[KEYWORD_endif]         = {0 & 0&0&0&0 & 0&0 & 1},
 	[KEYWORD_event]         = {0 & 0&0&0&0 & 0&0 & 0},
@@ -504,7 +512,7 @@ static struct SqlReservedWord SqlReservedWord [SQLKEYWORD_COUNT] = {
 static void parseBlock (tokenInfo *const token, const bool local);
 static void parseBlockFull (tokenInfo *const token, const bool local, langType lang);
 static void parseDeclare (tokenInfo *const token, const bool local);
-static void parseKeywords (tokenInfo *const token);
+static void parseKeywords (tokenInfo *const token, enum eKeywordId precedingKeyword);
 static tokenType parseSqlFile (tokenInfo *const token);
 
 /*
@@ -614,8 +622,7 @@ static void makeSqlTag (tokenInfo *const token, const sqlKind kind)
 		tagEntryInfo e;
 		initTagEntry (&e, name, kind);
 
-		e.lineNumber   = token->lineNumber;
-		e.filePosition = token->filePosition;
+		updateTagLine (&e, token->lineNumber, token->filePosition);
 
 		if (vStringLength (token->scope) > 0)
 		{
@@ -725,6 +732,10 @@ static bool isCCFlag(const char *str)
  * The syntax for dollar-quoted string ca collide with PL/SQL inquiry directive ($$name).
  * https://docs.oracle.com/en/database/oracle/oracle-database/18/lnpls/plsql-language-fundamentals.html#GUID-E918087C-D5A8-4CEE-841B-5333DE6D4C15
  * https://github.com/universal-ctags/ctags/issues/3006
+
+ * In addition, it can also collide with variable checks in PL/SQL selection directives such as:
+ * $IF $$my_var > 1 $THEN ... $END
+ * https://docs.oracle.com/en/database/oracle/oracle-database/19/lnpls/plsql-language-fundamentals.html#GUID-78F2074C-C799-4CF9-9290-EB8473D0C8FB
  */
 static tokenType parseDollarQuote (vString *const string, const int delimiter, int *promise)
 {
@@ -752,8 +763,20 @@ static tokenType parseDollarQuote (vString *const string, const int delimiter, i
 
 	if (c != delimiter)
 	{
-		/* damn that's not valid, what can we do? */
+		/* not a dollar quote */
+		keywordId kw = lookupCaseKeyword (tag+1, Lang_sql);
 		ungetcToInputFile (c);
+
+		if (kw == KEYWORD_if)
+			return TOKEN_PREPROC_IF;
+		else if (kw == KEYWORD_elsif)
+			return TOKEN_PREPROC_ELSIF;
+		else if (kw == KEYWORD_else)
+			return TOKEN_PREPROC_ELSE;
+		else if (kw == KEYWORD_then)
+			return TOKEN_PREPROC_THEN;
+		else if (kw == KEYWORD_end)
+			return TOKEN_PREPROC_END;
 		return TOKEN_UNDEFINED;
 	}
 
@@ -828,7 +851,7 @@ static tokenType parseDollarQuote (vString *const string, const int delimiter, i
 	return TOKEN_STRING;
 }
 
-static void readToken (tokenInfo *const token)
+static void readTokenFull (tokenInfo *const token, bool skippingPreproc)
 {
 	int c;
 
@@ -952,10 +975,39 @@ getNextChar:
 				  }
 
 		case '$':
-				  token->type = parseDollarQuote (token->string, c, &token->promise);
-				  token->lineNumber = getInputLineNumber ();
-				  token->filePosition = getInputFilePosition ();
-				  break;
+				  {
+					  tokenType t;
+					  if (skippingPreproc)
+					  {
+						  int d = getcFromInputFile ();
+						  if (d != '$')
+							  ungetcToInputFile (d);
+					  }
+					  t = parseDollarQuote (token->string, c, &token->promise);
+					  if (t == TOKEN_PREPROC_IF)
+					  {
+						  /* skip until $THEN and keep the content of this branch */
+						  readTokenFull (token, true);
+						  while (!isType (token, TOKEN_PREPROC_THEN) && !isType (token, TOKEN_EOF))
+							  readTokenFull (token, true);
+						  readTokenFull (token, false);
+					  }
+					  else if (!skippingPreproc && (t == TOKEN_PREPROC_ELSIF || t == TOKEN_PREPROC_ELSE))
+					  {
+						  /* skip until $END and drop $ELSIF and $ELSE branches */
+						  readTokenFull (token, true);
+						  while (!isType (token, TOKEN_PREPROC_END) && !isType (token, TOKEN_EOF))
+							  readTokenFull (token, true);
+						  readTokenFull (token, false);
+					  }
+					  else
+					  {
+						  token->type = t;
+						  token->lineNumber = getInputLineNumber ();
+						  token->filePosition = getInputFilePosition ();
+					  }
+					  break;
+				  }
 
 		default:
 				  if (! isIdentChar1 (c))
@@ -979,6 +1031,11 @@ getNextChar:
 				  }
 				  break;
 	}
+}
+
+static void readToken (tokenInfo *const token)
+{
+	readTokenFull (token, false);
 }
 
 /*
@@ -1018,11 +1075,7 @@ static void readIdentifier (tokenInfo *const token)
 
 static void addToScope (tokenInfo* const token, vString* const extra, sqlKind kind)
 {
-	if (vStringLength (token->scope) > 0)
-	{
-		vStringPut (token->scope, '.');
-	}
-	vStringCat (token->scope, extra);
+	vStringJoin (token->scope, '.', extra);
 	token->scopeKind = kind;
 }
 
@@ -1856,7 +1909,7 @@ static void parseStatements (tokenInfo *const token, const bool exit_on_endif )
 
 				case KEYWORD_create:
 					readToken (token);
-					parseKeywords(token);
+					parseKeywords(token, KEYWORD_create);
 					break;
 
 				case KEYWORD_declare:
@@ -2694,10 +2747,15 @@ static void parseView (tokenInfo *const token)
 	 *     create view VIEW;
 	 *     create view VIEW as ...;
 	 *     create view VIEW (...) as ...;
+	 *     create view if not exists VIEW as ...;
+	 *       -- [SQLITE] https://www.sqlite.org/lang_createview.html
 	 */
 
 	readIdentifier (name);
 	readToken (token);
+
+	parseIdAfterIfNotExists(name, token, false);
+
 	if (isType (token, TOKEN_PERIOD))
 	{
 		readIdentifier (name);
@@ -2952,7 +3010,7 @@ static void parseCCFLAGS (tokenInfo *const token)
 	/* http://web.deu.edu.tr/doc/oracle/B19306_01/server.102/b14237/initparams158.htm#REFRN10261 */
 	while (*s)
 	{
-		if (in_var && isIdentChar1((int)*s))
+		if (in_var && isIdentChar1((unsigned char) *s))
 			vStringPut(ccflag, *s);
 		else if (*s == ':' && !vStringIsEmpty(ccflag))
 		{
@@ -3037,7 +3095,7 @@ static void parseDatabase (tokenInfo *const token, enum eKeywordId keyword)
 	findCmdTerm (token, true);
 }
 
-static void parseKeywords (tokenInfo *const token)
+static void parseKeywords (tokenInfo *const token, enum eKeywordId precedingKeyword)
 {
 		switch (token->keyword)
 		{
@@ -3048,7 +3106,10 @@ static void parseKeywords (tokenInfo *const token)
 				break;
 			case KEYWORD_comment:		parseComment (token); break;
 			case KEYWORD_cursor:		parseSimple (token, SQLTAG_CURSOR); break;
-			case KEYWORD_database:		parseDatabase (token, KEYWORD_database); break;
+			case KEYWORD_database:
+				if (precedingKeyword == KEYWORD_create)
+					parseDatabase (token, KEYWORD_database);
+				break;
 			case KEYWORD_datatype:		parseDomain (token); break;
 			case KEYWORD_declare:		parseBlock (token, false); break;
 			case KEYWORD_domain:		parseDomain (token); break;
@@ -3072,7 +3133,10 @@ static void parseKeywords (tokenInfo *const token)
 			case KEYWORD_package:		parsePackage (token); break;
 			case KEYWORD_procedure:		parseSubProgram (token); break;
 			case KEYWORD_publication:	parsePublication (token); break;
-			case KEYWORD_schema:		parseDatabase (token, KEYWORD_schema); break;
+			case KEYWORD_schema:
+				if (precedingKeyword == KEYWORD_create)
+					parseDatabase (token, KEYWORD_schema);
+				break;
 			case KEYWORD_service:		parseService (token); break;
 			case KEYWORD_subtype:		parseSimple (token, SQLTAG_SUBTYPE); break;
 			case KEYWORD_synonym:		parseSynonym (token); break;
@@ -3091,12 +3155,13 @@ static tokenType parseSqlFile (tokenInfo *const token)
 {
 	do
 	{
+		enum eKeywordId k = token->keyword;
 		readToken (token);
 
 		if (isType (token, TOKEN_BLOCK_LABEL_BEGIN))
 			parseLabel (token);
 		else
-			parseKeywords (token);
+			parseKeywords (token, k);
 	} while (! isKeyword (token, KEYWORD_end) &&
 			 ! isType (token, TOKEN_EOF));
 

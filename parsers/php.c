@@ -351,8 +351,7 @@ static void initPhpEntry (tagEntryInfo *const e, const tokenInfo *const token,
 
 	initTagEntry (e, vStringValue (token->string), kind);
 
-	e->lineNumber	= token->lineNumber;
-	e->filePosition	= token->filePosition;
+	updateTagLine (e, token->lineNumber, token->filePosition);
 
 	if (access != ACCESS_UNDEFINED)
 		e->extensionFields.access = accessToString (access);
@@ -443,8 +442,7 @@ static void makeNamespacePhpTag (const tokenInfo *const token, const vString *co
 
 		initTagEntry (&e, vStringValue (name), K_NAMESPACE);
 
-		e.lineNumber	= token->lineNumber;
-		e.filePosition	= token->filePosition;
+		updateTagLine (&e, token->lineNumber, token->filePosition);
 
 		makePhpTagEntry (&e);
 	}
@@ -633,11 +631,11 @@ static void parseString (vString *const string, const int delimiter)
 		int c = getcFromInputFile ();
 
 		if (c == '\\' && (c = getcFromInputFile ()) != EOF)
-			vStringPut (string, (char) c);
+			vStringPut (string, c);
 		else if (c == EOF || c == delimiter)
 			break;
 		else
-			vStringPut (string, (char) c);
+			vStringPut (string, c);
 	}
 }
 
@@ -747,7 +745,7 @@ static void parseHeredoc (vString *const string)
 	{
 		c = getcFromInputFile ();
 
-		vStringPut (string, (char) c);
+		vStringPut (string, c);
 		if (c == '\r' || c == '\n')
 		{
 			/* new line, check for a delimiter right after.  No need to handle
@@ -758,7 +756,7 @@ static void parseHeredoc (vString *const string)
 			c = getcFromInputFile ();
 			while (c == ' ' || c == '\t')
 			{
-				vStringPut (string, (char) c);
+				vStringPut (string, c);
 				c = getcFromInputFile ();
 				indent_len++;
 			}
@@ -799,7 +797,7 @@ static void parseIdentifier (vString *const string, const int firstChar)
 	int c = firstChar;
 	do
 	{
-		vStringPut (string, (char) c);
+		vStringPut (string, c);
 		c = getcFromInputFile ();
 	} while (isIdentChar (c));
 	ungetcToInputFile (c);
@@ -1261,9 +1259,7 @@ static bool parseClassOrIface (tokenInfo *const token, const phpKind kind,
 			vString *qualifiedName = vStringNew ();
 
 			readQualifiedName (token, qualifiedName, NULL);
-			if (vStringLength (inheritance) > 0)
-				vStringPut (inheritance, ',');
-			vStringCat (inheritance, qualifiedName);
+			vStringJoin(inheritance, ',', qualifiedName);
 			if (istat == inheritance_extends && !parent)
 				parent = qualifiedName;
 			else
@@ -1740,6 +1736,36 @@ static bool parseNamespace (tokenInfo *const token)
 	return true;
 }
 
+/* skip trait uses not to confuse typerefs
+ * 	use Name;
+ * 	use \\Some\\Name;
+ * 	use Name, Other;
+ * 	use Name { method as private; }
+ * 	use Name, Other { otherMethod as public otherName; }
+ *
+ * Note that curly braces are only allowed on the last `use`, this is a syntax
+ * error:
+ * 	use Name { method as private; }, Other;
+ * This has to be split in two `use`es or reordered.
+ */
+static bool parseClassUse (tokenInfo *const token)
+{
+	do
+	{
+		readToken (token);
+		if (token->type == TOKEN_OPEN_CURLY)
+		{
+			enterScope (token, NULL, -1);
+			return true;
+		}
+	}
+	while (token->type == TOKEN_IDENTIFIER ||
+		   token->type == TOKEN_BACKSLASH ||
+		   token->type == TOKEN_COMMA);
+
+	return (token->type == TOKEN_SEMICOLON);
+}
+
 static void enterScope (tokenInfo *const parentToken,
 						const vString *const extraScope,
 						const int parentKind)
@@ -1802,6 +1828,8 @@ static void enterScope (tokenInfo *const parentToken,
 						 * is also used to i.e. "import" traits into a class */
 						if (vStringLength (token->scope) == 0)
 							readNext = parseUse (token);
+						else if (parentKind == K_CLASS || parentKind == K_TRAIT)
+							readNext = parseClassUse (token);
 						break;
 
 					case KEYWORD_namespace:	readNext = parseNamespace (token);	break;

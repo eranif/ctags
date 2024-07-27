@@ -6,7 +6,7 @@ ctags-lang-rmarkdown
 
 Random notes about tagging R Markdown source code with Universal Ctags
 
-:Version: 6.0.0
+:Version: 6.1.0
 :Manual group: Universal Ctags
 :Manual section: 7
 
@@ -64,7 +64,7 @@ Give `--extras=+{guest}` for enabling ``guest`` to command line if you
 want to run proper parsers on lines inside code chunks.
 
 The parser extracts chunk labels coming after `language-name` as
-`chunklabel` kind objcts. In the exapmle, the RMarkdown parser
+`chunklabel` kind objects. In the example, the RMarkdown parser
 extracts `precalc` as a `chunklabel` kind object.
 The `chunklabel` kind is enabled by default.
 

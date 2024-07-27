@@ -28,11 +28,10 @@ typedef struct {
 } tagPrintProcs;
 
 typedef struct {
-	/* TODO: int version; */
 	int extensionFields;
 	int lineNumber;
 	int escaping;
-	/* version 1 */
+	int escapingInputField;
 } tagPrintOptions;
 
 /*
@@ -46,6 +45,8 @@ extern int tagsPrint (const tagEntry *entry,
 					  tagPrintOptions *opts, tagPrintProcs *procs, void *outfp);
 extern int tagsPrintPseudoTag (const tagEntry *entry,
 							   tagPrintOptions *opts, tagPrintProcs *procs, void *outfp);
+
+extern int tagsPrintValue (const char *val, int escaping, tagPrintProcs *procs, void *outfp);
 
 #ifdef __cplusplus
 };

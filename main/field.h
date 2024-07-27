@@ -69,7 +69,7 @@ typedef enum eFieldType { /* extension field content control */
 	FIELD_BUILTIN_LAST = FIELD_NTH,
 } fieldType ;
 
-#define fieldDataTypeFalgs "sib" /* used in --list-fields */
+#define fieldDataTypeFlags "sib" /* used in --list-fields */
 typedef enum eFieldDataType {
 	FIELDTYPE_STRING  = 1 << 0,
 	FIELDTYPE_INTEGER = 1 << 1,
@@ -83,7 +83,6 @@ typedef const char* (*fieldRenderer)(const tagEntryInfo *const,
 									 const char *,
 									 vString *);
 
-#define FIELD_LETTER_NO_USE '\0'
 struct sFieldDefinition {
 	/* letter, and ftype are initialized in the main part,
 	   not in a parser. */

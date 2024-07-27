@@ -44,6 +44,7 @@ tagWriter customWriter = {
 
 
 /* we need to be able to provide an error printer which doesn't crash Geany on error */
+CTAGS_ATTR_PRINTF(2, 0)
 static bool nofatalErrorPrinter (const errorSelection selection,
 					  const char *const format,
 					  va_list ap, void *data CTAGS_ATTR_UNUSED)
@@ -75,7 +76,7 @@ static void enableRoles(unsigned int lang, unsigned int kind)
 
 
 /* we need to be able to enable all kinds and roles for all languages (some are disabled by default) */
-static void enableKindsAndRoles()
+static void enableKindsAndRoles(void)
 {
 	unsigned int lang;
 
@@ -181,9 +182,13 @@ static unsigned int ctagsGetLangCount(void)
 }
 
 
-void addIgnoreSymbol(const char *value)
+static void addIgnoreSymbol(const char *value)
 {
 	langType lang = getNamedLanguage ("CPreProcessor", 0);
+	/*
+	 * In the future, we will rename applyParameter to
+	 * applyLanguageParam.
+	 */
 	applyParameter (lang, "ignore", value);
 }
 
@@ -341,7 +346,7 @@ extern int main (int argc, char **argv)
 		/* set to something else */
 		addIgnoreSymbol("FOO");
 
-		printf("Number of all parsers is: %d\n", ctagsGetLangCount());
+		printf("The total number of parsers is: %d\n", ctagsGetLangCount());
 		printf("We are parsing %s which provides the following kinds:\n",
 			ctagsGetLangName(lang));
 		for (i = 0; kinds[i] != '\0'; i++)

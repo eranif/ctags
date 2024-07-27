@@ -73,7 +73,7 @@ struct hereDocMarkerManager {
 *   FUNCTION DEFINITIONS
 */
 
-static void notifyEnteringPod ()
+static void notifyEnteringPod (void)
 {
 	subparser *sub;
 
@@ -89,7 +89,7 @@ static void notifyEnteringPod ()
 	}
 }
 
-static void notifyLeavingPod ()
+static void notifyLeavingPod (void)
 {
 	subparser *sub;
 
@@ -252,16 +252,16 @@ static void makeTagFromLeftSide (const char *begin, const char *end,
 	const char *b, *e;
 	if (! PerlKinds[KIND_PERL_CONSTANT].enabled)
 		return;
-	for (e = end - 1; e > begin && isspace(*e); --e)
+	for (e = end - 1; e > begin && isspace((unsigned char) *e); --e)
 		;
 	if (e < begin)
 		return;
-	for (b = e; b >= begin && isIdentifier(*b); --b)
+	for (b = e; b >= begin && isIdentifier((unsigned char) *b); --b)
 		;
 	/* Identifier must be either beginning of line of have some whitespace
 	 * on its left:
 	 */
-	if (b < begin || isspace(*b) || ',' == *b)
+	if (b < begin || isspace((unsigned char) *b) || ',' == *b)
 		++b;
 	else if (b != begin)
 		return;
@@ -601,7 +601,9 @@ static void collectHereDocMarkers (struct hereDocMarkerManager *mgr,
 								   const unsigned char *line)
 {
 	const unsigned char *cp = line;
+#ifdef DEBUG
 	const unsigned char *last = cp;
+#endif
 	while ((cp = collectHereDocMarker(mgr, cp)) != NULL)
 		Assert(last < cp);
 }
@@ -623,9 +625,10 @@ static bool isInHereDoc (struct hereDocMarkerManager *mgr,
 		&& (cp [vStringLength (current->marker)] == '\0'
 			|| (!isIdentifier (cp [vStringLength (current->marker)]))))
 	{
-		tagEntryInfo *tag = getEntryInCorkQueue (current->corkIndex);
-		if (tag)
-			tag->extensionFields.endLine = getInputLineNumber();
+		setTagEndLineToCorkEntry (current->corkIndex, getInputLineNumber());
+
+		makeSimpleRefTag (current->marker, KIND_PERL_HEREDOCMARKER, R_HEREDOC_ENDLABEL);
+
 		mgr->current++;
 		if (mgr->current == ptrArrayCount (mgr->markers))
 		{
@@ -752,7 +755,7 @@ static void findPerlTags (void)
 		if (parse_only_pod_area)
 			continue;
 
-		while (isspace (*cp))
+		while (isspace (*cp) || *cp == '{' || *cp == '}')
 			cp++;
 
 		if (strncmp((const char*) cp, "sub", (size_t) 3) == 0)
@@ -872,9 +875,9 @@ static void findPerlTags (void)
 			else
 				vStringClear (package);
 			const unsigned char *const first = cp;
-			while (*cp && (int) *cp != ';'  &&  !isspace ((int) *cp))
+			while (*cp && (int) *cp != ';'  &&  !isspace (*cp))
 			{
-				vStringPut (package, (int) *cp);
+				vStringPut (package, *cp);
 				cp++;
 			}
 			vStringCatS (package, "::");
@@ -927,7 +930,7 @@ static void findPerlTags (void)
 
 			while (isIdentifier (*cp) || (KIND_PERL_PACKAGE == kind && ':' == *cp))
 			{
-				vStringPut (name, (int) *cp);
+				vStringPut (name, *cp);
 				cp++;
 			}
 

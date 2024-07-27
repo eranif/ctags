@@ -39,7 +39,7 @@ static void vStringCatToupperS (vString *str, const char *s)
 {
 	for (const char *tmp = s; *tmp != '\0'; tmp++)
 	{
-		int c = toupper (*tmp);
+		int c = toupper ((unsigned char) *tmp);
 		vStringPut (str, c);
 	}
 }
@@ -210,7 +210,7 @@ static void optscriptInstallFieldSetter (EsObject *dict, fieldType ftype,
 
 	const char *vtype = getFieldSetterValueType (ftype);
 	unsigned int fdata_type = getFieldDataType (ftype);
-	vStringCatS (op_desc, "int ");
+	vStringCatS (op_desc, "tag:int ");
 
 	if (vtype)
 		vStringCatS (op_desc, vtype);

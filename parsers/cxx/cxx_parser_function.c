@@ -14,6 +14,7 @@
 #include "cxx_token.h"
 #include "cxx_token_chain.h"
 #include "cxx_scope.h"
+#include "cxx_side_chain.h"
 
 #include "parse.h"
 #include "vstring.h"
@@ -284,6 +285,7 @@ int cxxParserMaybeParseKnRStyleFunctionDefinition(void)
 
 	if(tag)
 	{
+		cxxSideChainScan(pIdentifier->pSideChain);
 		if(pParenthesis->pChain->pTail)
 		{
 			// normalize signature
@@ -292,6 +294,7 @@ int cxxParserMaybeParseKnRStyleFunctionDefinition(void)
 			pParenthesis->pChain->pTail->bFollowedBySpace = false;
 		}
 
+		// We don't have to consider export'ed status here; the input is written in C!
 		tag->isFileScope = (g_cxx.uKeywordState & CXXParserKeywordStateSeenStatic) &&
 				!isInputHeaderFile();
 
@@ -317,6 +320,7 @@ int cxxParserMaybeParseKnRStyleFunctionDefinition(void)
 			vStringValue(pIdentifier->pszWord)
 		);
 
+	// We don't have to propagate export'ed status; the input is written in C!
 	cxxScopePush(pIdentifier,CXXScopeTypeFunction,CXXScopeAccessUnknown);
 
 	// emit parameters
@@ -1257,7 +1261,7 @@ next_token:
 					// hmm.. probably a template specialisation
 					pAux = pSmallerThan->pPrev;
 					pInfo->uFlags |= CXXFunctionSignatureInfoScopeTemplateSpecialization;
-				} else if(pAux->eType == CXXTokenTypeAngleBracketChain)
+				} else if(cxxTokenTypeIs(pAux, CXXTokenTypeAngleBracketChain))
 				{
 					// same as above, but already condensed (though it should never happen)
 					if(!pAux->pPrev)
@@ -1543,6 +1547,7 @@ int cxxParserEmitFunctionTags(
 			0
 		);
 
+	cxxSideChainCollectInRange(pInfo->pIdentifierStart,pInfo->pIdentifierEnd,pIdentifier);
 	cxxTokenChainDestroyRange(pInfo->pIdentifierChain,pInfo->pIdentifierStart,pInfo->pIdentifierEnd);
 
 	CXX_DEBUG_ASSERT(
@@ -1623,6 +1628,11 @@ int cxxParserEmitFunctionTags(
 				tag->isFileScope = !isInputHeaderFile();
 			}
 		}
+		// Overwrite the assigned value if the language object is export'ed.
+		tag->isFileScope = ((g_cxx.uKeywordState & CXXParserKeywordStateSeenExport)
+							|| cxxScopeIsExported())
+			? 0
+			: tag->isFileScope;
 
 		vString * pszSignature = cxxTokenChainJoin(pInfo->pParenthesis->pChain,NULL,0);
 		if(pInfo->pSignatureConst)
@@ -1653,6 +1663,7 @@ int cxxParserEmitFunctionTags(
 					CXXToken * pTokenBeforeParenthesis = pInfo->pParenthesis->pPrev;
 					cxxTokenChainTake(pInfo->pParenthesisContainerChain,pInfo->pParenthesis);
 
+					cxxSideChainCollectInRange(pInfo->pTypeStart,pInfo->pTypeEnd, pIdentifier);
 					pTypeName = cxxTagCheckAndSetTypeField(pInfo->pTypeStart,pInfo->pTypeEnd);
 
 					cxxTokenChainInsertAfter(
@@ -1664,6 +1675,7 @@ int cxxParserEmitFunctionTags(
 					pTypeName = NULL;
 				}
 			} else {
+				cxxSideChainCollectInRange(pInfo->pTypeStart,pInfo->pTypeEnd, pIdentifier);
 				pTypeName = cxxTagCheckAndSetTypeField(pInfo->pTypeStart,pInfo->pTypeEnd);
 			}
 		} else {
@@ -1756,9 +1768,13 @@ int cxxParserEmitFunctionTags(
 								CXXTagPropertyTemplateSpecialization;
 			if((pInfo->uFlags & CXXFunctionSignatureInfoTemplateSpecialization) || bIsEmptyTemplate)
 				uProperties |= CXXTagPropertyTemplateSpecialization;
+			if(g_cxx.uKeywordState & CXXParserKeywordStateSeenExport)
+				uProperties |= CXXTagPropertyExport;
 
 			pszProperties = cxxTagSetProperties(uProperties);
 		}
+
+		cxxSideChainScan(pIdentifier->pSideChain);
 
 		int iCorkQueueIndex = cxxTagCommit(piCorkQueueIndexFQ);
 		cxxTagUseTokenAsPartOfDefTag(iCorkQueueIndex, pIdentifier);
@@ -2227,7 +2243,7 @@ try_again:
 						 *
 						 *   void f(int *);
 						 */
-						pIdentifier = cxxTokenCreateAnonymousIdentifier(CXXTagKindPARAMETER);
+						pIdentifier = cxxTokenCreateAnonymousIdentifier(CXXTagKindPARAMETER, NULL);
 						pIdentifier->iLineNumber = t->pPrev->iLineNumber;
 						pIdentifier->oFilePosition = t->pPrev->oFilePosition;
 						pParamInfo->uAnonymous |= (0x1u << pParamInfo->uCount);
@@ -2271,7 +2287,7 @@ try_again:
 			 *
 			 */
 			CXXToken * pFakeStart = cxxTokenCopy(pStart);
-			CXXToken * pFakeId = cxxTokenCreateAnonymousIdentifier(CXXTagKindPARAMETER);
+			CXXToken * pFakeId = cxxTokenCreateAnonymousIdentifier(CXXTagKindPARAMETER, NULL);
 			pFakeId->iLineNumber = pStart->iLineNumber;
 			pFakeId->oFilePosition = pStart->oFilePosition;
 

@@ -16,7 +16,7 @@ PACKCC_FILES = misc/packcc/.gitignore   \
 	       \
 	       $(NULL)
 
-EXTRA_DIST   = README.md autogen.sh \
+EXTRA_DIST   = README.md NEWS.rst autogen.sh \
 	       misc/optlib2c \
 	       .ctags.d/exclusion.ctags .dir-locals.el .editorconfig .gdbinit .gitignore \
 	       .indent.pro .uncrustify.cfg \
@@ -38,6 +38,11 @@ EXTRA_DIST   = README.md autogen.sh \
 	       misc/txt2cstr \
 	       $(PEG_INPUT) $(OPTLIB2C_INPUT) $(OPTLIB2C_PCRE2_INPUT) $(TXT2CSTR_INPUT) \
 	       docs Tmain Units m4/gnulib-cache.m4
+
+if HAVE_PEGOF
+# Keeping intermediate files for debugging pegof and u-ctags buildsys.
+EXTRA_DIST   += $(PEGO_INTERMEDIATE)
+endif
 
 CLEANFILES =
 MOSTLYCLEANFILES =
@@ -62,6 +67,8 @@ noinst_LIBRARIES += libutil.a
 
 noinst_PROGRAMS = utiltest
 
+AM_LDFLAGS = $(EXTRA_LDFLAGS)
+
 # packcc always uses native compiler even when cross-compiling.
 # packcc cannot use the standard Automake rule.
 PACKCC_CPPFLAGS_FOR_BUILD  = -fsigned-char
@@ -84,7 +91,7 @@ readtags_CPPFLAGS = -I. -I$(srcdir) -I$(srcdir)/main -I$(srcdir)/libreadtags
 if ENABLE_DEBUGGING
 readtags_CPPFLAGS+= $(DEBUG_CPPFLAGS)
 endif
-readtags_CFLAGS = $(COVERAGE_CFLAGS) $(WARNING_CFLAGS)
+readtags_CFLAGS = $(EXTRA_CFLAGS) $(WARNING_CFLAGS) $(COVERAGE_CFLAGS)
 dist_readtags_SOURCES = $(READTAGS_SRCS) $(READTAGS_HEADS)
 readtags_CPPFLAGS += $(GNULIB_CPPFLAGS)
 readtags_CPPFLAGS += -DREADTAGS_DSL -I$(srcdir)/dsl
@@ -144,6 +151,9 @@ libctags_a_CPPFLAGS+= $(DEBUG_CPPFLAGS)
 endif
 if HAVE_STRNLEN
 libctags_a_CPPFLAGS += -DUSE_SYSTEM_STRNLEN
+endif
+if HAVE_PEGOF
+libctags_a_CPPFLAGS += -DHAVE_PEGOF
 endif
 libctags_a_CPPFLAGS+= $(GNULIB_CPPFLAGS)
 libctags_a_CPPFLAGS+= -DHAVE_REPOINFO_H
@@ -210,10 +220,27 @@ packcc_verbose = $(packcc_verbose_@AM_V@)
 packcc_verbose_ = $(packcc_verbose_@AM_DEFAULT_V@)
 packcc_verbose_0 = @echo PACKCC "    $@";
 SUFFIXES += .peg
+
+if HAVE_PEGOF
+pegof_verbose = $(pegof_verbose_@AM_V@)
+pegof_verbose_ = $(pegof_verbose_@AM_DEFAULT_V@)
+pegof_verbose_0 = @echo PEGOF "    $@";
+SUFFIXES += .pego
+
+PEGOF_FLAGS = -O all
+.peg.pego:
+	$(pegof_verbose)$(PEGOF) $(PEGOF_FLAGS) -o $(top_builddir)/peg/$(@F) -i "$<"
+.pego.c:
+	$(packcc_verbose)$(PACKCC) -o $(top_builddir)/peg/$(*F) $(top_builddir)/peg/$(<F)
+.pego.h:
+	$(packcc_verbose)$(PACKCC) -o $(top_builddir)/peg/$(*F) $(top_builddir)/peg/$(<F)
+else
 .peg.c:
 	$(packcc_verbose)$(PACKCC) -o $(top_builddir)/peg/$(*F) "$<"
 .peg.h:
 	$(packcc_verbose)$(PACKCC) -o $(top_builddir)/peg/$(*F) "$<"
+endif
+
 # You cannot use $(PACKCC) as a target name here.
 $(PEG_SRCS) $(PEG_HEADS): $(PACKCC) Makefile
 dist_libctags_a_SOURCES = $(ALL_LIB_HEADS) $(ALL_LIB_SRCS)

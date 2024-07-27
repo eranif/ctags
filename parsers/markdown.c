@@ -28,6 +28,7 @@
 #include "parse.h"
 #include "read.h"
 #include "vstring.h"
+#include "utf8_str.h"
 #include "nestlevel.h"
 #include "routines.h"
 #include "promise.h"
@@ -47,6 +48,7 @@ typedef enum {
 	K_LEVEL5SECTION,
 	K_SECTION_COUNT,
 	K_FOOTNOTE = K_SECTION_COUNT,
+	K_HASHTAG,
 } markdownKind;
 
 static kindDefinition MarkdownKinds[] = {
@@ -57,6 +59,7 @@ static kindDefinition MarkdownKinds[] = {
 	{ true, 'T', "l4subsection",  "level 4 sections" },
 	{ true, 'u', "l5subsection",  "level 5 sections" },
 	{ true, 'n', "footnote",      "footnotes" },
+	{ true, 'h', "hashtag",       "hashtags"},
 };
 
 static fieldDefinition MarkdownFields [] = {
@@ -113,12 +116,11 @@ static int makeMarkdownTag (const vString* const name, const int kind, const boo
 		if (twoLine)
 		{
 			/* we want the line before the '---' underline chars */
-			const unsigned long line = getInputLineNumber ();
-			Assert (line > 0);
-			if (line > 0)
+			Assert (e.lineNumber > 1);
+			if (e.lineNumber > 1)
 			{
-				e.lineNumber--;
-				e.filePosition = getInputFilePositionForLine (line - 1);
+				unsigned long lineNumber = e.lineNumber - 1;
+				updateTagLine (&e, lineNumber, getInputFilePositionForLine (lineNumber));
 			}
 		}
 
@@ -186,7 +188,7 @@ static void fillEndField (NestingLevel *nl, void *ctxData)
 	if (e)
 	{
 		unsigned long line = (unsigned long)(HT_PTR_TO_UINT (ctxData));
-		e->extensionFields.endLine = line;
+		setTagEndLine (e, line);
 	}
 }
 
@@ -212,24 +214,138 @@ static void getFootnoteMaybe (const char *line)
 	vStringDelete (footnote);
 }
 
-static bool extractLanguageForCodeBlock (const char *langMarker,
-										 vString *codeLang)
+static markdownSubparser * extractLanguageForCodeBlock (const char *langMarker,
+														vString *codeLang)
 {
-	subparser *s;
-	bool r = false;
+	subparser *s = NULL;
+	bool b = false;
+	markdownSubparser *r = NULL;
 
 	foreachSubparser (s, false)
 	{
 		markdownSubparser *m = (markdownSubparser *)s;
 		enterSubparser(s);
 		if (m->extractLanguageForCodeBlock)
-			r = m->extractLanguageForCodeBlock (m, langMarker, codeLang);
+			b = m->extractLanguageForCodeBlock (m, langMarker, codeLang);
 		leaveSubparser();
-		if (r)
+		if (b)
+		{
+			r = m;
 			break;
+		}
 	}
 
 	return r;
+}
+
+static void notifyCodeBlockLine (markdownSubparser *m, const unsigned char *line)
+{
+	subparser *s = (subparser *)m;
+	if (m->notifyCodeBlockLine)
+	{
+		enterSubparser(s);
+		m->notifyCodeBlockLine (m, line);
+		leaveSubparser();
+	}
+}
+
+static void notifyEndOfCodeBlock (markdownSubparser *m)
+{
+	subparser *s = (subparser *)m;
+
+	if (m->notifyEndOfCodeBlock)
+	{
+		enterSubparser(s);
+		m->notifyEndOfCodeBlock (m);
+		leaveSubparser();
+	}
+}
+
+typedef enum {
+	HTAG_SPACE_FOUND,
+	HTAG_HASHTAG_FOUND,
+	HTAG_TEXT,
+} hashtagState;
+
+/*
+   State machine to find all hashtags in a line.
+ */
+static void getAllHashTagsInLineMaybe (const unsigned char *line, int pos,
+	int lineLen, hashtagState state)
+{
+	while (pos < lineLen)
+	{
+		switch (state)
+		{
+		case HTAG_SPACE_FOUND:
+			if (line[pos] == '#')
+			{
+				state = HTAG_HASHTAG_FOUND;
+			}
+			else if (!isspace (line[pos]))
+				state = HTAG_TEXT;
+			pos++;
+			break;
+		case HTAG_HASHTAG_FOUND:
+		{
+			/* `#123` is invalid */
+			bool hasNonNumericalChar = false;
+
+			const int hashtag_start = pos;
+			while (pos < lineLen)
+			{
+				int utf8_len;
+				if (isalpha (line[pos])
+					|| line[pos] == '_' || line[pos] == '-' || line[pos] == '/')
+				{
+					hasNonNumericalChar = true;
+					pos++;
+				}
+				else if (isdigit (line[pos]))
+				{
+					pos++;
+				}
+				else if ((utf8_len =
+						utf8_raw_strlen ((const char *) &line[pos],
+							lineLen - pos)) > 0)
+				{
+					hasNonNumericalChar = true;
+					pos += utf8_len;
+					Assert (pos <= lineLen);
+				}
+				else
+				{
+					break;
+				}
+			}
+
+			int hashtag_length = pos - hashtag_start;
+			if (hasNonNumericalChar && hashtag_length > 0)
+			{
+				vString *tag =
+					vStringNewNInit ((const char *) (&(line[hashtag_start])), hashtag_length);
+				makeMarkdownTag (tag, K_HASHTAG, false);
+				vStringDelete (tag);
+			}
+
+			if (pos < lineLen)
+			{
+				if (isspace (line[pos]))
+					state = HTAG_SPACE_FOUND;
+				else
+					state = HTAG_TEXT;
+			}
+		}
+			break;
+		case HTAG_TEXT:
+			while (pos < lineLen && !isspace (line[pos]))
+				pos++;
+			state = HTAG_SPACE_FOUND;
+			break;
+		default:
+			break;
+		}
+	}
 }
 
 static void findMarkdownTags (void)
@@ -249,6 +365,7 @@ static void findMarkdownTags (void)
 
 	nestingLevels = nestingLevelsNewFull (0, fillEndField);
 
+	markdownSubparser *marksub = NULL;
 	while ((line = readLineFromInputFile ()) != NULL)
 	{
 		int lineLen = strlen ((const char*) line);
@@ -259,7 +376,11 @@ static void findMarkdownTags (void)
 
 		if (lineNum == 1 || inPreambule)
 		{
-			if (line[pos] == '-' && line[pos + 1] == '-' && line[pos + 2] == '-')
+			if ((line[pos] == '-' && line[pos + 1] == '-' && line[pos + 2] == '-')
+				|| ( /* Yaml uses "..." as the end of a document.
+					  * See https://yaml.org/spec/1.2.2/#22-structures */
+					inPreambule &&
+					(line[pos] == '.' && line[pos + 1] == '.' && line[pos + 2] == '.')))
 			{
 				if (inPreambule)
 				{
@@ -283,7 +404,7 @@ static void findMarkdownTags (void)
 			char c = line[pos];
 			char otherC = c == '`' ? '~' : '`';
 			int nSame;
-			for (nSame = 1; line[nSame] == line[pos]; ++nSame);
+			for (nSame = 1; line[nSame + pos] == line[pos]; ++nSame);
 
 			if (inCodeChar != otherC && nSame >= 3)
 			{
@@ -296,7 +417,8 @@ static void findMarkdownTags (void)
 					startLineNumber = startSourceLineNumber = lineNum + 1;
 
 					vStringClear (codeLang);
-					if (! extractLanguageForCodeBlock (langMarker, codeLang))
+					marksub = extractLanguageForCodeBlock (langMarker, codeLang);
+					if (! marksub)
 					{
 						vStringCopyS (codeLang, langMarker);
 						vStringStripLeading (codeLang);
@@ -309,7 +431,12 @@ static void findMarkdownTags (void)
 					if (vStringLength (codeLang) > 0
 						&& startLineNumber < endLineNumber)
 						makePromise (vStringValue (codeLang), startLineNumber, 0,
-							endLineNumber, 0, startSourceLineNumber);
+									 endLineNumber, 0, startSourceLineNumber);
+					if (marksub)
+					{
+						notifyEndOfCodeBlock(marksub);
+						marksub = NULL;
+					}
 				}
 
 				lineProcessed = true;
@@ -330,6 +457,9 @@ static void findMarkdownTags (void)
 			lineProcessed = true;
 		}
 
+		if (marksub)
+			notifyCodeBlockLine (marksub, line);
+
 		/* code block or comment */
 		if (inCodeChar || inComment)
 			lineProcessed = true;
@@ -341,8 +471,10 @@ static void findMarkdownTags (void)
 		/* if it's a title underline, or a delimited block marking character */
 		else if (line[pos] == '=' || line[pos] == '-' || line[pos] == '#' || line[pos] == '>')
 		{
+			/* hashtags may follow the title or quote */
+			getAllHashTagsInLineMaybe(line, pos, lineLen, line[pos] == '#' ? HTAG_SPACE_FOUND :HTAG_TEXT);
 			int nSame;
-			for (nSame = 1; line[nSame] == line[pos]; ++nSame);
+			for (nSame = 1; line[pos + nSame] == line[pos]; ++nSame);
 
 			/* quote */
 			if (line[pos] == '>')
@@ -369,11 +501,11 @@ static void findMarkdownTags (void)
 					makeSectionMarkdownTag (prevLine, kind, marker);
 			}
 			/* otherwise is it a one line title */
-			else if (line[pos] == '#' && nSame <= K_SECTION_COUNT && isspace (line[nSame]))
+			else if (line[pos] == '#' && nSame <= K_SECTION_COUNT && isspace (line[pos + nSame]))
 			{
 				int kind = nSame - 1;
 				bool delimited = false;
-				vString *name = getHeading (kind, line, lineLen, &delimited);
+				vString *name = getHeading (kind, line + pos, lineLen - pos, &delimited);
 				if (vStringLength (name) > 0)
 					makeSectionMarkdownTag (name, kind, delimited ? "##" : "#");
 				vStringDelete (name);
@@ -385,6 +517,7 @@ static void findMarkdownTags (void)
 		vStringClear (prevLine);
 		if (!lineProcessed)
 		{
+			getAllHashTagsInLineMaybe(line, pos, lineLen, HTAG_SPACE_FOUND);
 			getFootnoteMaybe ((const char *)line);
 			vStringCatS (prevLine, (const char*) line);
 		}
@@ -401,6 +534,9 @@ extern parserDefinition* MarkdownParser (void)
 {
 	parserDefinition* const def = parserNew ("Markdown");
 	static const char *const extensions [] = { "md", "markdown", NULL };
+
+	def->versionCurrent = 1;
+	def->versionAge = 1;
 
 	def->enabled  = true;
 	def->extensions = extensions;

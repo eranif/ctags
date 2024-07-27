@@ -51,7 +51,7 @@ static void findAspTags (void)
 		while (*cp != '\0')
 		{
 			/* jump over whitespace */
-			while (isspace ((int)*cp))
+			while (isspace (*cp))
 				cp++;
 
 			/* jump over strings */
@@ -70,9 +70,9 @@ static void findAspTags (void)
 			else if (strncasecmp ((const char*) cp, "end", (size_t) 3)== 0)
 			{
 				cp += 3;
-				if (isspace ((int)*cp))
+				if (isspace (*cp))
 				{
-					while (isspace ((int)*cp))
+					while (isspace (*cp))
 						++cp;
 
 					if (strncasecmp ((const char*) cp, "function", (size_t) 8) == 0)
@@ -93,9 +93,9 @@ static void findAspTags (void)
 			else if (strncasecmp ((const char*) cp, "exit", (size_t) 4)==0)
 			{
 				cp += 4;
-				if (isspace ((int) *cp))
+				if (isspace (*cp))
 				{
-					while (isspace ((int) *cp))
+					while (isspace (*cp))
 						++cp;
 
 					if (strncasecmp ((const char*) cp, "function", (size_t) 8) == 0)
@@ -116,18 +116,18 @@ static void findAspTags (void)
 			else if (strncasecmp ((const char*) cp, "public", (size_t) 6) == 0)
 			{
 				cp += 6;
-				if (isspace ((int) *cp))
+				if (isspace (*cp))
 				{
-					while (isspace ((int) *cp))
+					while (isspace (*cp))
 						++cp;
 					if (strncasecmp ((const char*) cp, "function", (size_t) 8) == 0)
 					{
 						cp+=8;
-					    while (isspace ((int) *cp))
+					    while (isspace (*cp))
 						    ++cp;
-					    while (isalnum ((int) *cp)  ||  *cp == '_')
+					    while (isalnum (*cp)  ||  *cp == '_')
 					    {
-						    vStringPut (name, (int) *cp);
+						    vStringPut (name, *cp);
 						    ++cp;
 					    }
 					    makeSimpleTag (name, K_FUNCTION);
@@ -136,20 +136,20 @@ static void findAspTags (void)
 					else if (strncasecmp ((const char*) cp, "sub", (size_t) 3) == 0)
 					{
 						cp+=3;
-					    while (isspace ((int) *cp))
+					    while (isspace (*cp))
 						    ++cp;
-					    while (isalnum ((int) *cp)  ||  *cp == '_')
+					    while (isalnum (*cp)  ||  *cp == '_')
 					    {
-						    vStringPut (name, (int) *cp);
+						    vStringPut (name, *cp);
 						    ++cp;
 					    }
 					    makeSimpleTag (name, K_SUB);
 					    vStringClear (name);
 					}
 					else {
-					    while (isalnum ((int) *cp)  ||  *cp == '_')
+					    while (isalnum (*cp)  ||  *cp == '_')
 					    {
-						    vStringPut (name, (int) *cp);
+						    vStringPut (name, *cp);
 						    ++cp;
 					    }
 					    makeSimpleTag (name, K_DIM);
@@ -160,18 +160,18 @@ static void findAspTags (void)
 			else if (strncasecmp ((const char*) cp, "private", (size_t) 7) == 0)
 			{
 				cp += 7;
-				if (isspace ((int) *cp))
+				if (isspace (*cp))
 				{
-					while (isspace ((int) *cp))
+					while (isspace (*cp))
 						++cp;
 					if (strncasecmp ((const char*) cp, "function", (size_t) 8) == 0)
 					{
 						cp+=8;
-					    while (isspace ((int) *cp))
+					    while (isspace (*cp))
 						    ++cp;
-					    while (isalnum ((int) *cp)  ||  *cp == '_')
+					    while (isalnum (*cp)  ||  *cp == '_')
 					    {
-						    vStringPut (name, (int) *cp);
+						    vStringPut (name, *cp);
 						    ++cp;
 					    }
 					    makeSimpleTag (name, K_FUNCTION);
@@ -180,20 +180,20 @@ static void findAspTags (void)
 					else if (strncasecmp ((const char*) cp, "sub", (size_t) 3) == 0)
 					{
 						cp+=3;
-					    while (isspace ((int) *cp))
+					    while (isspace (*cp))
 						    ++cp;
-					    while (isalnum ((int) *cp)  ||  *cp == '_')
+					    while (isalnum (*cp)  ||  *cp == '_')
 					    {
-						    vStringPut (name, (int) *cp);
+						    vStringPut (name, *cp);
 						    ++cp;
 					    }
 					    makeSimpleTag (name, K_SUB);
 					    vStringClear (name);
 					}
 					else {
-					    while (isalnum ((int) *cp)  ||  *cp == '_')
+					    while (isalnum (*cp)  ||  *cp == '_')
 					    {
-						    vStringPut (name, (int) *cp);
+						    vStringPut (name, *cp);
 						    ++cp;
 					    }
 					    makeSimpleTag (name, K_DIM);
@@ -207,13 +207,13 @@ static void findAspTags (void)
 			{
 				cp += 8;
 
-				if (isspace ((int) *cp))
+				if (isspace (*cp))
 				{
-					while (isspace ((int) *cp))
+					while (isspace (*cp))
 						++cp;
-					while (isalnum ((int) *cp)  ||  *cp == '_')
+					while (isalnum (*cp)  ||  *cp == '_')
 					{
-						vStringPut (name, (int) *cp);
+						vStringPut (name, *cp);
 						++cp;
 					}
 					makeSimpleTag (name, K_FUNCTION);
@@ -225,13 +225,13 @@ static void findAspTags (void)
 			else if (strncasecmp ((const char*) cp, "sub", (size_t) 3) == 0)
 			{
 				cp += 3;
-				if (isspace ((int) *cp))
+				if (isspace (*cp))
 				{
-					while (isspace ((int) *cp))
+					while (isspace (*cp))
 						++cp;
-					while (isalnum ((int) *cp)  ||  *cp == '_')
+					while (isalnum (*cp)  ||  *cp == '_')
 					{
-						vStringPut (name, (int) *cp);
+						vStringPut (name, *cp);
 						++cp;
 					}
 					makeSimpleTag (name, K_SUB);
@@ -243,13 +243,13 @@ static void findAspTags (void)
 			else if (strncasecmp ((const char*) cp, "dim", (size_t) 3) == 0)
 			{
 				cp += 3;
-				if (isspace ((int) *cp))
+				if (isspace (*cp))
 				{
-					while (isspace ((int) *cp))
+					while (isspace (*cp))
 						++cp;
-					while (isalnum ((int) *cp)  ||  *cp == '_')
+					while (isalnum (*cp)  ||  *cp == '_')
 					{
-						vStringPut (name, (int) *cp);
+						vStringPut (name, *cp);
 						++cp;
 					}
 					makeSimpleTag (name, K_DIM);
@@ -261,13 +261,13 @@ static void findAspTags (void)
 			else if (strncasecmp ((const char*) cp, "class", (size_t) 5) == 0)
 			{
 				cp += 5;
-				if (isspace ((int) *cp))
+				if (isspace (*cp))
 				{
-					while (isspace ((int) *cp))
+					while (isspace (*cp))
 						++cp;
-					while (isalnum ((int) *cp)  ||  *cp == '_')
+					while (isalnum (*cp)  ||  *cp == '_')
 					{
-						vStringPut (name, (int) *cp);
+						vStringPut (name, *cp);
 						++cp;
 					}
 					makeSimpleTag (name, K_CLASS);
@@ -279,13 +279,13 @@ static void findAspTags (void)
 			else if (strncasecmp ((const char*) cp, "const", (size_t) 5) == 0)
 			{
 				cp += 5;
-				if (isspace ((int) *cp))
+				if (isspace (*cp))
 				{
-					while (isspace ((int) *cp))
+					while (isspace (*cp))
 						++cp;
-					while (isalnum ((int) *cp)  ||  *cp == '_')
+					while (isalnum (*cp)  ||  *cp == '_')
 					{
-						vStringPut (name, (int) *cp);
+						vStringPut (name, *cp);
 						++cp;
 					}
 					makeSimpleTag (name, K_CONST);

@@ -366,7 +366,7 @@ static int makeSimpleRTagR (tokenInfo *const token, int parent, int kind,
 		if (assignmentOp)
 		{
 			if (strlen (assignmentOp) > 0)
-				attachParserField (tag, true,
+				attachParserField (tag,
 								   RFields [F_ASSIGNMENT_OPERATOR].ftype,
 								   assignmentOp);
 			else
@@ -409,7 +409,7 @@ static int makeSimpleRTag (tokenInfo *const token, int parent, bool in_func, int
 	{
 		tagEntryInfo *e = getEntryInCorkQueue (r);
 		if (e)
-			attachParserField (e, true,
+			attachParserField (e,
 							   RFields [F_CONSTRUCTOR].ftype,
 							   ctor);
 	}
@@ -944,7 +944,7 @@ static void parseRightSide (tokenInfo *const token, tokenInfo *const symbol, int
 	tagEntryInfo *tag = getEntryInCorkQueue (corkIndex);
 	if (tag)
 	{
-		tag->extensionFields.endLine = token->lineNumber;
+		setTagEndLine (tag, token->lineNumber);
 		if (signature)
 		{
 			tag->extensionFields.signature = vStringDeleteUnwrap(signature);
@@ -959,7 +959,7 @@ static void parseRightSide (tokenInfo *const token, tokenInfo *const symbol, int
 			foreachEntriesInScope (corkIndex, NULL,
 								   findNonPlaceholder, &any_non_placehoders);
 			if (!any_non_placehoders)
-				tag->placeholder = 1;
+				markTagAsPlaceholder (tag, true); /* TODO: remove from intervaltab */
 		}
 	}
 

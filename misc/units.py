@@ -281,7 +281,7 @@ def run_shrink(cmdline_template, finput, foutput, lang):
 # otherwise return a list of command line arguments.
 def basename_filter(internal, output_type):
     filters_external = {
-            'ctags': 's%\(^[^\t]\{1,\}\t\)\(/\{0,1\}\([^/\t]\{1,\}/\)*\)%\\1%',
+            'ctags': r's%\(^[^\t]\{1,\}\t\)\(/\{0,1\}\([^/\t]\{1,\}/\)*\)%\\1%',
             # "input" in the expresion is for finding input file names in the TAGS file.
             # RAWOUT.tmp:
             #
@@ -300,9 +300,9 @@ def basename_filter(internal, output_type):
             #
             # FIXME: if "input" is included as a substring of tag entry names, filtering
             # with this expression makes the test fail.
-            'etags': 's%.*\/\(input[-._][[:print:]]\{1,\}\),\([0-9]\{1,\}$\)%\\1,\\2%',
-            'xref': 's%\(.*[[:digit:]]\{1,\} \)\([^ ]\{1,\}[^ ]\{1,\}\)/\([^ ].\{1,\}.\{1,\}$\)%\\1\\3%',
-            'json': 's%\("path": \)"[^"]\{1,\}/\([^/"]\{1,\}\)"%\\1"\\2"%',
+            'etags': r's%.*\/\(input[-._][[:print:]]\{1,\}\),\([0-9]\{1,\}$\)%\\1,\\2%',
+            'xref': r's%\(.*[[:digit:]]\{1,\} \)\([^ ]\{1,\}[^ ]\{1,\}\)/\([^ ].\{1,\}.\{1,\}$\)%\\1\\3%',
+            'json': r's%\("path": \)"[^"]\{1,\}/\([^/"]\{1,\}\)"%\\1"\\2"%',
             }
     filters_internal = {
             'ctags': [r'(^[^\t]+\t)(/?([^/\t]+/)*)', r'\1'],
@@ -900,7 +900,8 @@ def action_run(parser, action, *args):
             help='run a test case with specified timeout in seconds. 0 means no timeout (default).')
     parser.add_argument('--with-valgrind', action='store_true', default=False,
             help='run a test case under valgrind')
-    parser.add_argument('--colorized-output', choices=['yes', 'no'], default='yes',
+    parser.add_argument('--colorized-output', choices=['yes', 'no'],
+            default='yes' if len(os.environ.get('NO_COLOR', "")) == 0 else 'no',
             help='print the result in color.')
     parser.add_argument('--run-shrink', action='store_true', default=False,
             help='(TODO: NOT IMPLEMENTED YET)')

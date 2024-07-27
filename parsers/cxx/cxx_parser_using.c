@@ -18,10 +18,13 @@
 #include "parse.h"
 #include "vstring.h"
 #include "read.h"
+#include "trashbox.h"
 
 bool cxxParserParseUsingClause(void)
 {
 	CXX_DEBUG_ENTER();
+
+	unsigned int uInitialKeywordState = g_cxx.uKeywordState;
 
 	// using-directives for namespaces and using-declarations
 	// for namespace members
@@ -117,7 +120,7 @@ bool cxxParserParseUsingClause(void)
 
 		if(g_cxx.pTokenChain->iCount > 0)
 		{
-			tagEntryInfo * tag;
+			tagEntryInfo * tag = NULL;
 
 			if(bUsingNamespace)
 			{
@@ -139,11 +142,28 @@ bool cxxParserParseUsingClause(void)
 
 				t = cxxTokenChainLast(g_cxx.pTokenChain);
 
-				CXX_DEBUG_PRINT(
+				if (cxxTokenTypeIs(t,CXXTokenTypeIdentifier)) {
+					CXX_DEBUG_PRINT(
 						"Found using clause '%s' which imports a name",
 						vStringValue(t->pszWord)
-					);
-				tag = cxxTagBegin(CXXTagCPPKindNAME,t);
+						);
+					tag = cxxTagBegin(CXXTagCPPKindNAME,t);
+				} else {
+					CXXToken * pOp = cxxTokenChainFirstKeyword(
+						g_cxx.pTokenChain,
+						CXXKeywordOPERATOR
+						);
+
+					if (pOp) {
+						vString *pOpStr = cxxTokenChainJoinRange (pOp, t, " ",
+																  CXXTokenChainJoinNoTrailingSpaces);
+						PARSER_TRASH_BOX(pOpStr, vStringDelete);
+						CXXToken * pOpToken = cxxTokenCopy(pOp);
+						PARSER_TRASH_BOX(pOpToken, cxxTokenDestroy);
+						vStringCopy(pOpToken->pszWord, pOpStr);
+						tag = cxxTagBegin(CXXTagCPPKindNAME,pOpToken);
+					}
+				}
 
 				// FIXME: We need something like "nameref:<condensed>" here!
 			}
@@ -152,7 +172,22 @@ bool cxxParserParseUsingClause(void)
 			{
 				tag->isFileScope = (cxxScopeGetType() == CXXScopeTypeNamespace) &&
 							(!isInputHeaderFile());
+
+				bool bExported = uInitialKeywordState & CXXParserKeywordStateSeenExport;
+				unsigned int uProperties = 0;
+				if(bExported)
+					uProperties |= CXXTagPropertyExport;
+				tag->isFileScope = bExported || cxxScopeIsExported()
+					? 0
+					: tag->isFileScope;
+				vString * pszProperties = NULL;
+
+				if(uProperties)
+					pszProperties = cxxTagSetProperties(uProperties);
+
 				cxxTagCommit(NULL);
+
+				vStringDelete (pszProperties);
 			}
 		}
 	}

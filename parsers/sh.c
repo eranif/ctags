@@ -194,7 +194,7 @@ static int readDestfileName (const unsigned char *cp, vString *destfile)
 {
 	const unsigned char *origin = cp;
 
-	while (isspace ((int) *cp))
+	while (isspace (*cp))
 		++cp;
 
 	/* >... */
@@ -205,17 +205,17 @@ static int readDestfileName (const unsigned char *cp, vString *destfile)
 	if (*cp == '>')
 		++cp;
 
-	while (isspace ((int) *cp))
+	while (isspace (*cp))
 		++cp;
 
-	if (!isFileChar ((int) *cp))
+	if (!isFileChar (*cp))
 		return 0;
 
 	vStringClear(destfile);
 	do {
-		vStringPut (destfile, (int) *cp);
+		vStringPut (destfile, *cp);
 		++cp;
-	} while (isFileChar ((int) *cp));
+	} while (isFileChar (*cp));
 
 	if (vStringLength(destfile) > 0)
 		return cp - origin;
@@ -328,12 +328,8 @@ static int hdocStateReadDestfileName (struct hereDocParsingState *hstate,
 
 static void hdocStateUpdateTag (struct hereDocParsingState *hstate, unsigned long endLine)
 {
-	tagEntryInfo *tag = getEntryInCorkQueue (hstate->corkIndex);
-	if (tag)
-	{
-		tag->extensionFields.endLine = endLine;
-		hstate->corkIndex = CORK_NIL;
-	}
+	setTagEndLineToCorkEntry (hstate->corkIndex, endLine);
+	hstate->corkIndex = CORK_NIL;
 }
 
 static size_t handleShKeyword (int keyword,
@@ -364,9 +360,39 @@ static size_t handleShKeyword (int keyword,
 	return vStringLength(token);
 }
 
-static int makeShTag (vString *name, const unsigned char ** cp CTAGS_ATTR_UNUSED,
+static int makeShAliasTag(vString *name, const unsigned char ** cp, const char *options)
+{
+	const unsigned char *p = *cp;
+	int r = CORK_NIL;
+
+	const char *opt = vStringValue (name);
+	if (opt[0] == '-')
+	{
+		if  (strpbrk(opt, options))
+			return CORK_NIL;
+
+		vStringClear(name);
+
+		while (isspace (*p))
+			p++;
+
+		while (*p && isIdentChar (*p))
+			vStringPut (name, *p++);
+	}
+
+	if (!vStringIsEmpty(name) && *p == '=')
+		r = makeSimpleTag (name, K_ALIAS);
+	*cp = p;
+	return r;
+}
+
+static int makeShTag (vString *name, const unsigned char ** cp,
 					  int found_kind, int found_role)
 {
+	if (found_kind == K_ALIAS && found_role == ROLE_DEFINITION_INDEX)
+		/* -p is for printing defined aliases in bash. */
+		return makeShAliasTag (name, cp, "p");
+
 	return makeSimpleRefTag (name, found_kind, found_role);
 }
 
@@ -422,17 +448,44 @@ static int makeZshAutoloadTag(vString *name, const unsigned char ** cp)
 	return r;
 }
 
-static int makeZshTag (vString *name, const unsigned char ** cp,
-					  int found_kind, int found_role)
+static int makeZshFunctionTag(vString *name, const unsigned char ** cp)
 {
 	const unsigned char *p = *cp;
 
-	if (found_kind == K_SCRIPT && found_role == R_ZSH_SCRIPT_AUTOLOADED)
+	int r = CORK_NIL;
+
+	if (strcmp(vStringValue(name), "-T") == 0)
 	{
-		int r = makeZshAutoloadTag(name, &p);
-		*cp = p;
-		return r;
+		vStringClear(name);
+
+		while (isspace (*p))
+			p++;
+
+		while (isBashFunctionChar (*p))
+		{
+			vStringPut (name, *p);
+			++p;
+		}
 	}
+
+	if (!vStringIsEmpty(name))
+		r = makeSimpleTag (name, K_FUNCTION);
+	*cp = p;
+	return r;
+}
+
+static int makeZshTag (vString *name, const unsigned char ** cp,
+					  int found_kind, int found_role)
+{
+	if (found_kind == K_SCRIPT && found_role == R_ZSH_SCRIPT_AUTOLOADED)
+		return makeZshAutoloadTag(name, cp);
+
+	if (found_kind == K_FUNCTION && found_role == ROLE_DEFINITION_INDEX)
+		return makeZshFunctionTag(name, cp);
+
+	if (found_kind == K_ALIAS && found_role == ROLE_DEFINITION_INDEX)
+		/* -m, -r, and -L are for printing defined aliases. */
+		return makeShAliasTag (name, cp, "mrL");
 
 	return makeShTag (name, cp, found_kind, found_role);
 }
@@ -509,7 +562,7 @@ static void findShTagsCommon (size_t (* keyword_handler) (int,
 			int sub_n = 0;
 
 			/* jump over whitespace */
-			while (isspace ((int)*cp))
+			while (isspace (*cp))
 				cp++;
 
 			/* jump over strings */
@@ -556,7 +609,7 @@ static void findShTagsCommon (size_t (* keyword_handler) (int,
 				}
 				else
 				{
-					while (isIdentChar ((int) *cp))
+					while (isIdentChar (*cp))
 						cp++;
 					end = cp;
 				}
@@ -584,7 +637,7 @@ static void findShTagsCommon (size_t (* keyword_handler) (int,
 			check_char = isBashFunctionChar;
 
 			if (cp [0] == '.'
-				    && isspace((int) cp [1]))
+				    && isspace(cp [1]))
 			{
 				found_kind = K_SCRIPT;
 				found_role = R_SCRIPT_LOADED;
@@ -617,7 +670,7 @@ static void findShTagsCommon (size_t (* keyword_handler) (int,
 			}
 
 			if (found_kind != K_NOTHING)
-				while (isspace ((int) *cp))
+				while (isspace (*cp))
 					++cp;
 
 			if (found_kind == K_SUBPARSER)
@@ -629,7 +682,7 @@ static void findShTagsCommon (size_t (* keyword_handler) (int,
 			else
 			{
 				// Get the name of the function, alias or file to be read by source
-				if (! check_char ((int) *cp))
+				if (! check_char (*cp))
 				{
 					found_kind = K_NOTHING;
 					found_role = ROLE_DEFINITION_INDEX;
@@ -643,21 +696,21 @@ static void findShTagsCommon (size_t (* keyword_handler) (int,
 					continue;
 				}
 
-				while (check_char ((int) *cp))
+				while (check_char (*cp))
 				{
-					vStringPut (name, (int) *cp);
+					vStringPut (name, *cp);
 					++cp;
 				}
 			}
 
-			while (isspace ((int) *cp))
+			while (isspace (*cp))
 				++cp;
 
 			if ((found_kind != K_SCRIPT)
 			    && *cp == '(')
 			{
 				++cp;
-				while (isspace ((int) *cp))
+				while (isspace (*cp))
 					++cp;
 				if (*cp == ')')
 				{

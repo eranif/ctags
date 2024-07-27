@@ -23,63 +23,60 @@
 
 (defun ctags-optlib-mode-setup-function ()
   (let ((st (syntax-table)))
-    (modify-syntax-entry ?\' " " st)
-    (modify-syntax-entry ?\" " " st)))
+    (modify-syntax-entry ?\' "." st)
+    (modify-syntax-entry ?\" "." st)))
 
 (define-generic-mode ctags-optlib-mode
-  '(?#)
+  '(?# ?%)
   nil
   '(;;
     ;; Language
     ;;
-    ("^--\\(langdef\\)=\\([a-zA-Z0-9]+\\)"
+    ("^[[:space:]]*--\\(langdef\\)=\\([a-zA-Z0-9]+\\)"
      (1 font-lock-keyword-face t)
      (2 font-lock-type-face t))
-    ("^--\\(map\\)-\\([a-zA-Z0-9]+\\)=.*"
-     (1 font-lock-keyword-face t)
-     (2 font-lock-type-face t))
-    ("--\\(alias\\)-\\([a-zA-Z0-9]+\\)=.*"
+    ("^[[:space:]]*--\\(map\\|alias\\|_?prelude\\|_?scopesep\\)-\\([a-zA-Z0-9]+\\)=.*"
      (1 font-lock-keyword-face t)
      (2 font-lock-type-face t))
     ;;
     ;; Kinds
     ;;
-    ("^--\\(kinddef\\)-\\([^=]+\\)=\\([a-zA-Z]\\),\\([a-zA-Z0-9]+\\),\\(.*\\)$"
+    ("^[[:space:]]*--\\(kinddef\\)-\\([^=]+\\)=\\([a-zA-Z]\\),\\([a-zA-Z0-9]+\\),\\(.*\\)$"
      (1 font-lock-keyword-face t)
      (2 font-lock-type-face t)
      (3 font-lock-constant-face t)
      (4 font-lock-variable-name-face t)
      (5 font-lock-doc-face t))
-    ("^--\\(kinds\\)-\\([^=]+\\)=[+-]?\\([a-zA-Z]+\\)"
+    ("^[[:space:]]*--\\(kinds\\)-\\([^=]+\\)=[+-]?\\([a-zA-Z]+\\)"
      (1 font-lock-keyword-face t)
      (2 font-lock-type-face t)
      (3 font-lock-constant-face t))
     ;;
     ;; Singe line regex
     ;;
-    ("^--\\(regex\\)-\\([^=]+\\)="
+    ("^[[:space:]]*--\\(regex\\)-\\([^=]+\\)="
      (1 font-lock-keyword-face t)
      (2 font-lock-type-face t))
     ;;
     ;; Mline regex
     ;;
-    ("^--\\(mline-regex\\)-\\([^=]+\\)="
+    ("^[[:space:]]*--\\(mline-regex\\)-\\([^=]+\\)="
      (1 font-lock-keyword-face t)
      (2 font-lock-type-face t))
     ;;
     ;; Mtable regex
     ;;
-    ("^--\\(_tabledef\\)-\\([^=]+\\)=\\([a-zA-Z0-9_]+\\)"
+    ("^[[:space:]]*--\\(_tabledef\\)-\\([^=]+\\)=\\([a-zA-Z0-9_]+\\)"
      (1 font-lock-keyword-face t)
      (2 font-lock-type-face t)
      (3 font-lock-function-name-face t)
      )
-    ("^--\\(_mtable-regex\\)-\\([^=]+\\)=\\([a-zA-Z0-9_]+\\)/\\(.*\\)$"
+    ("^[[:space:]]*--\\(_mtable-regex\\)-\\([^=]+\\)=\\([a-zA-Z0-9_]+\\)/\\(.*\\)$"
      (1 font-lock-keyword-face t)
      (2 font-lock-type-face t)
      (3 font-lock-function-name-face t)
      (4 nil t))
-    ("^--\\(_mtable-extend\\)-\\([^=]+\\)=\\([a-zA-Z0-9_]+\\)\\+\\([a-zA-Z0-9_]+\\)"
+    ("^[[:space:]]*--\\(_mtable-extend\\)-\\([^=]+\\)=\\([a-zA-Z0-9_]+\\)\\+\\([a-zA-Z0-9_]+\\)"
      (1 font-lock-keyword-face t)
      (2 font-lock-type-face t)
      (3 font-lock-function-name-face t)
@@ -87,36 +84,45 @@
     ;;
     ;; Fields
     ;;
-    ("^--\\(_fielddef\\)-\\([a-zA-Z0-9]+\\)=\\([a-zA-Z0-9]+\\),\\(.*\\)$"
+    ("^[[:space:]]*--\\(_fielddef\\)-\\([a-zA-Z0-9]+\\)=\\([a-zA-Z0-9]+\\),\\(.*\\)$"
      (1 font-lock-keyword-face t)
      (2 font-lock-type-face t)
      (3 font-lock-variable-name-face t)
      (4 font-lock-doc-face t))
-    ("^--\\(fields\\)-\\([a-zA-Z0-9]+\\)=.?{\\([a-zA-Z0-9]+\\)}"
+    ("^[[:space:]]*--\\(fields\\)-\\([a-zA-Z0-9]+\\)=.?{\\([a-zA-Z0-9]+\\)}"
      (1 font-lock-keyword-face t)
      (2 font-lock-type-face t)
      (3 font-lock-variable-name-face t))
     ;;
     ;; Roles
     ;;
-    ("^--\\(_roledef\\)-\\([a-zA-Z0-9]+\\)=\\([a-zA-Z]\\)\\.\\([a-zA-Z0-9]+\\),\\(.*\\)$"
+    ("^[[:space:]]*--\\(_roledef\\)-\\([a-zA-Z0-9]+\\)\\.\\(?:\\([a-zA-Z]\\)\\|{\\([a-zA-Z0-9]+\\)}\\)=\\([a-zA-Z0-9]+\\),\\(.*\\)$"
      (1 font-lock-keyword-face t)
      (2 font-lock-type-face t)
-     (3 font-lock-constant-face t)
-     (4 font-lock-constant-face t)
-     (5 font-lock-doc-face t))
+     (3 font-lock-constant-face t t)
+     (4 font-lock-constant-face t t)
+     (5 font-lock-variable-name-face t)
+     (6 font-lock-doc-face t))
     ;;
     ;; Extras
     ;;
-    ("^--\\(_extradef\\)-\\([a-zA-Z0-9]+\\)=\\([a-zA-Z0-9]+\\),\\(.*\\)$"
+    ("^[[:space:]]*--\\(_extradef\\)-\\([a-zA-Z0-9]+\\)=\\([a-zA-Z0-9]+\\),\\(.*\\)$"
      (1 font-lock-keyword-face t)
      (2 font-lock-type-face t)
      (3 font-lock-variable-name-face t)
      (4 font-lock-doc-face t))
-    ("^--\\(extras\\)-\\([a-zA-Z0-9]+\\)=.?{\\([a-zA-Z0-9]+\\)}"
+    ("^[[:space:]]*--\\(extras\\)-\\([a-zA-Z0-9]+\\)=.?{\\([a-zA-Z0-9]+\\)}"
      (1 font-lock-keyword-face t)
      (2 font-lock-type-face t)
      (3 font-lock-variable-name-face t))
+    ;;
+    ;; Parameters
+    ;;
+    ("^[[:space:]]*--\\(_?paramdef\\)-\\([a-zA-Z0-9]+\\)=\\([a-zA-Z0-9]+\\),\\(.*\\)"
+     (1 font-lock-keyword-face t)
+     (2 font-lock-type-face t)
+     (3 font-lock-variable-name-face t)
+     (4 font-lock-doc-face t))
     ;;
     ;; Flags
     ;;
@@ -147,8 +153,16 @@
      (2 font-lock-builtin-face t))
     ("{\\(icase\\|exclusive\\|tleave\\|placeholder\\|tquit\\|mgroup\\|dedicated\\|shared\\|_trace\\)[^}]*}"
      (1 font-lock-keyword-face t))
+    ("{\\(_anonymous=\\)[^}]*}"
+     (1 font-lock-keyword-face t))
+    ("{\\(_guest=\\)\\([^,]+\\)?[^}]*}"
+     (1 font-lock-keyword-face t)
+     (2 font-lock-type-face t t))
+    ("\\<[p]\\>" . font-lock-keyword-face)
     ("/\\([a-zA-Z]\\)/"
      (1 font-lock-constant-face t))
+    ("{{$\\|^}}" . font-lock-preprocessor-face)
+    ;;
     )
   '("\\.ctags\\'")
   '(ctags-optlib-mode-setup-function)

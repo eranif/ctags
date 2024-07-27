@@ -24,13 +24,14 @@
 #include "parse.h"
 #include "read.h"
 #include "routines.h"
+#include "selectors.h"
 #include "vstring.h"
 #include "xtag.h"
 
 /*
 *   MACROS
 */
-#define isident(c)              (isalnum(c) || (c) == '_')
+#define isident(c)              (isalnum(c) || (c) == '_' || (c) == '$')
 #define isBlank(c)              (bool) (c == ' ' || c == '\t')
 #define isType(token,t)         (bool) ((token)->type == (t))
 #define isKeyword(token,k)      (bool) ((token)->keyword == (k))
@@ -368,6 +369,18 @@ static const keywordTable FortranKeywordTable [] = {
 	{ "while",          KEYWORD_while        }
 };
 
+typedef enum {
+	X_LINK_NAME,
+} fortranXtag;
+
+static xtagDefinition FortranXtagTable [] = {
+	{
+		.enabled = false,
+		.name    = "linkName",
+		.description = "Linking name used in foreign languages",
+	},
+};
+
 static struct {
 	unsigned int count;
 	unsigned int max;
@@ -554,6 +567,46 @@ static const char *implementationString (const impType imp)
 	return names [(int) imp];
 }
 
+static bool hasLinkName(tagEntryInfo *e)
+{
+	switch (e->kindIndex)
+	{
+	case TAG_FUNCTION:
+	case TAG_SUBROUTINE:
+	case TAG_BLOCK_DATA:
+	case TAG_COMMON_BLOCK:
+	case TAG_ENTRY_POINT:
+		return true;
+	default:
+		return false;
+	}
+}
+
+/* ref.
+ * * https://gcc.gnu.org/onlinedocs/gfortran/Code-Gen-Options.html
+ *   - -fno-underscoring
+ *   - -fsecond-underscore
+ * * https://docs.oracle.com/cd/E19957-01/805-4940/z400091044a7/index.html
+ */
+static void makeFortranLinkNameTag(tagEntryInfo *e)
+{
+	vString *ln = vStringNewInit (e->name);
+	vStringLower(ln);
+
+#if 0
+	if (strchr(vStringValue (ln), '_'))
+		vStringPut(ln, '_');
+#endif
+
+	vStringPut(ln, '_');
+
+	tagEntryInfo ln_e = *e;
+	ln_e.name = vStringValue (ln);
+	markTagExtraBit (&ln_e, FortranXtagTable[X_LINK_NAME].xtype);
+	makeTagEntry (&ln_e);
+	vStringDelete (ln);
+}
+
 static void makeFortranTag (tokenInfo *const token, tagType tag)
 {
 	token->tag = tag;
@@ -570,8 +623,7 @@ static void makeFortranTag (tokenInfo *const token, tagType tag)
 		if (token->anonymous)
 			markTagExtraBit (&e, XTAG_ANONYMOUS);
 
-		e.lineNumber	= token->lineNumber;
-		e.filePosition	= token->filePosition;
+		updateTagLine (&e, token->lineNumber, token->filePosition);
 		e.isFileScope	= isFileScope (token->tag);
 		if (e.isFileScope)
 			markTagExtraBit (&e, XTAG_FILE_SCOPE);
@@ -600,6 +652,9 @@ static void makeFortranTag (tokenInfo *const token, tagType tag)
 			 token->tag == TAG_PROTOTYPE))
 			e.extensionFields.signature = vStringValue (token->signature);
 		makeTagEntry (&e);
+		if (isXtagEnabled (FortranXtagTable[X_LINK_NAME].xtype)
+			&& hasLinkName(&e))
+			makeFortranLinkNameTag(&e);
 	}
 }
 
@@ -2716,6 +2771,9 @@ extern parserDefinition* FortranParser (void)
 #endif
 		NULL
 	};
+	static selectLanguage selectors[] = { selectFortranOrForthByForthMarker,
+					      NULL };
+
 	parserDefinition* def = parserNew ("Fortran");
 	def->kindTable      = FortranKinds;
 	def->kindCount  = ARRAY_SIZE (FortranKinds);
@@ -2724,5 +2782,12 @@ extern parserDefinition* FortranParser (void)
 	def->initialize = initialize;
 	def->keywordTable = FortranKeywordTable;
 	def->keywordCount = ARRAY_SIZE (FortranKeywordTable);
+	def->xtagTable  = FortranXtagTable;
+	def->xtagCount  = ARRAY_SIZE(FortranXtagTable);
+
+	def->versionCurrent = 1;
+	def->versionAge = 1;
+	def->selectLanguage = selectors;
+
 	return def;
 }

@@ -11,6 +11,7 @@
 *.od
 *.pdf
 *.pyc
+*.swp
 *.c3workspace
 *.c3workspace.user
 *.tar.gz
@@ -20,6 +21,7 @@
 /Makefile
 /packcc
 /packcc.exe
+.cache
 .deps
 .dirstamp
 .DS_Store
@@ -29,6 +31,7 @@ autom4te.cache
 badinput
 commit-stamp
 compile
+compile_commands.json
 config.cache
 config.guess
 config.h
@@ -84,6 +87,9 @@ _build
 man/ctags.1
 man/ctags.1.html
 man/ctags.1.rst
+man/ctags-*.5
+man/ctags-*.5.rst
+man/ctags-*.5.html
 man/ctags-*.7
 man/ctags-*.7.rst
 man/ctags-*.7.html
@@ -92,6 +98,7 @@ man/readtags.1
 man/readtags.1.rst
 man/readtags.1.html
 man/tags.5
+man/tags.5.rst
 man/tags.5.html
 man/*.[157].in
 ManTest

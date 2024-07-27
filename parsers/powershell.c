@@ -42,6 +42,7 @@ typedef enum {
 	K_CLASS,
 	K_FILTER,
 	K_ENUM,
+	K_ENUMLABEL,
 	COUNT_KIND
 } powerShellKind;
 
@@ -51,6 +52,7 @@ static kindDefinition PowerShellKinds[COUNT_KIND] = {
 	{ true, 'c', "class",		"classes" },
 	{ true, 'i', "filter",		"filter" },
 	{ true, 'g', "enum",		"enum names" },
+	{ true, 'e', "enumlabel",	"enum labels" },
 };
 
 
@@ -124,8 +126,7 @@ static void initPowerShellEntry (tagEntryInfo *const e, const tokenInfo *const t
 {
 	initTagEntry (e, vStringValue (token->string), kind);
 
-	e->lineNumber	= token->lineNumber;
-	e->filePosition	= token->filePosition;
+	updateTagLine (e, token->lineNumber, token->filePosition);
 
 	if (access != NULL)
 		e->extensionFields.access = access;
@@ -248,7 +249,7 @@ static void parseString (vString *const string, const int delimiter)
 	{
 		int c = getcFromInputFile ();
 
-		if (c == '\\' && (c = getcFromInputFile ()) != EOF)
+		if (delimiter == '"' && c == '`' && (c = getcFromInputFile ()) != EOF)
 			vStringPut (string, c);
 		else if (c == EOF || c == delimiter)
 			break;
@@ -650,6 +651,30 @@ static bool parseEnum (tokenInfo *const token)
 }
 
 /* parses declarations of the form
+ * 	<label> [= <int-value>]
+ * that is, contents of an enum
+ */
+static bool parseEnumLabel (tokenInfo *const token)
+{
+	bool readNext = true;
+
+	if (token->parentKind != K_ENUM)
+		return false;
+
+	if (token->type != TOKEN_IDENTIFIER)
+		return false;
+
+	makeSimplePowerShellTag (token, K_ENUMLABEL, ACCESS_UNDEFINED);
+	readToken (token);
+	if (token->type != TOKEN_EQUAL_SIGN)
+		readNext = false;
+	else /* skip int-value */
+		readToken (token);
+
+	return readNext;
+}
+
+/* parses declarations of the form
  * 	$var = VALUE
  */
 static bool parseVariable (tokenInfo *const token)
@@ -736,6 +761,11 @@ static void enterScope (tokenInfo *const parentToken,
 				readNext = parseVariable (token);
 				break;
 
+			case TOKEN_IDENTIFIER:
+				if (parentKind == K_ENUM)
+					readNext = parseEnumLabel (token);
+				break;
+
 			default: break;
 		}
 
@@ -771,5 +801,9 @@ extern parserDefinition* PowerShellParser (void)
 	def->parser     = findPowerShellTags;
 	def->keywordTable = PowerShellKeywordTable;
 	def->keywordCount = ARRAY_SIZE (PowerShellKeywordTable);
+
+	def->versionCurrent = 1;
+	def->versionAge = 1;
+
 	return def;
 }

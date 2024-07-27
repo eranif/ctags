@@ -6,7 +6,7 @@ ctags-lang-gdscript
 
 Random notes about tagging GDScript source code with Universal Ctags
 
-:Version: 6.0.0
+:Version: 6.1.0
 :Manual group: Universal Ctags
 :Manual section: 7
 
@@ -190,7 +190,7 @@ with "--options=NONE --fields=+Ki --extras-GDScript=+{implicitClass} -o - input.
 	C	input.gd	/^class_name C$/;"	class	inherits:B
 
 When `--extras=+r` is given, the parser extracts the class specified with the
-`extends` keyword as a referece tag of ``class`` kind with ``extended`` role.
+`extends` keyword as a reference tag of ``class`` kind with ``extended`` role.
 
 "input.gd"
 

@@ -44,8 +44,9 @@ bool g_bFirstRun = true;
 // - Clear the token chain
 // - Reset "seen" keywords
 //
-void cxxParserNewStatement(void)
+void cxxParserNewStatementFull(bool bExported)
 {
+	CXX_DEBUG_PRINT("NEW STATE: %d", bExported);
 	cxxTokenChainClear(g_cxx.pTokenChain);
 	if(g_cxx.pTemplateTokenChain)
 	{
@@ -56,11 +57,16 @@ void cxxParserNewStatement(void)
 		// we don't care about stale specializations as they
 		// are destroyed wen the base template prefix is extracted
 	}
-	g_cxx.uKeywordState = 0;
+	g_cxx.uKeywordState = bExported? CXXParserKeywordStateSeenExport: 0;
 
 	// FIXME: this cpp handling of end/statement is kind of broken:
 	//        it works only because the moon is in the correct phase.
 	cppEndStatement();
+}
+
+void cxxParserNewStatement(void)
+{
+	cxxParserNewStatementFull(false);
 }
 
 //
@@ -423,11 +429,7 @@ void cxxParserSetEndLineForTagInCorkQueue(int iCorkQueueIndex,unsigned long lEnd
 {
 	CXX_DEBUG_ASSERT(iCorkQueueIndex > CORK_NIL,"The cork queue index is not valid");
 
-	tagEntryInfo * tag = getEntryInCorkQueue (iCorkQueueIndex);
-
-	CXX_DEBUG_ASSERT(tag,"No tag entry in the cork queue");
-
-	tag->extensionFields.endLine = lEndLine;
+	setTagEndLineToCorkEntry (iCorkQueueIndex, lEndLine);
 }
 
 //
@@ -554,6 +556,25 @@ static bool cxxParserParseEnumStructClassOrUnionFullDeclarationTrailer(
 	if(cxxTokenTypeIs(g_cxx.pToken,CXXTokenTypeOpeningBracket))
 	{
 		CXX_DEBUG_PRINT("Found opening bracket: possibly a function declaration?");
+
+		// Revert keyword states.
+		// Here we assume the following kind of input:
+		//
+		//   static struct S {...} fn (...) { ... }
+		//
+		// To fill properties: field of fn with "static", g_cxx.uKeywordState
+		// must be set here.
+		//
+		// See cxxParserEmitFunctionTags.
+		//
+		// NOTE: C++ doesn't accept such kind of input. So we propagate
+		// the state only meaningful in C languages.
+		g_cxx.uKeywordState |= uKeywordState & (0
+			| CXXParserKeywordStateSeenStatic
+			| CXXParserKeywordStateSeenInline
+			| CXXParserKeywordStateSeenExtern
+			| CXXParserKeywordStateSeenAttributeDeprecated
+			);
 		if(!cxxParserParseBlockHandleOpeningBracket())
 		{
 			CXX_DEBUG_LEAVE_TEXT("Failed to handle the opening bracket");
@@ -578,7 +599,26 @@ static bool cxxParserParseEnumStructClassOrUnionFullDeclarationTrailer(
 	if(uKeywordState & CXXParserKeywordStateSeenTypedef)
 		cxxParserExtractTypedef(g_cxx.pTokenChain,true,false);
 	else
+	{
+		// Revert keyword states.
+		// Here we assume the following kind of input:
+		//
+		//   static struct S {...} s;
+		//
+		// To fill properties: field of s with "static", g_cxx.uKeywordState
+		// must be set here.
+		g_cxx.uKeywordState |= uKeywordState & (0
+			| CXXParserKeywordStateSeenStatic
+			| CXXParserKeywordStateSeenExtern
+			| CXXParserKeywordStateSeenMutable
+			| CXXParserKeywordStateSeenInline
+			| CXXParserKeywordStateSeenAttributeDeprecated
+			| CXXParserKeywordStateSeenConstexpr
+			| CXXParserKeywordStateSeenConstinit
+			| CXXParserKeywordStateSeenThreadLocal
+			);
 		cxxParserExtractVariableDeclarations(g_cxx.pTokenChain,0);
+	}
 
 	CXX_DEBUG_LEAVE();
 	return true;
@@ -845,7 +885,7 @@ bool cxxParserParseEnum(void)
 		CXX_DEBUG_PRINT("Enum name is %s",vStringValue(pEnumName->pszWord));
 		cxxTokenChainTake(g_cxx.pTokenChain,pEnumName);
 	} else {
-		pEnumName = cxxTokenCreateAnonymousIdentifier(CXXTagKindENUM);
+		pEnumName = cxxTokenCreateAnonymousIdentifier(CXXTagKindENUM, NULL);
 		bAnonymous = true;
 		CXX_DEBUG_PRINT(
 				"Enum name is %s (anonymous)",
@@ -859,6 +899,7 @@ bool cxxParserParseEnum(void)
 	int iCorkQueueIndex = CORK_NIL;
 	int iCorkQueueIndexFQ = CORK_NIL;
 
+	bool bEnumExported = false;
 	if(tag)
 	{
 		// FIXME: this is debatable
@@ -876,8 +917,21 @@ bool cxxParserParseEnum(void)
 			pTypeName = cxxTagCheckAndSetTypeField(pTypeBegin,pTypeEnd);
 		}
 
+
+		unsigned int uProperties = 0;
 		if(bIsScopedEnum)
-			pszProperties = cxxTagSetProperties(CXXTagPropertyScopedEnum);
+			uProperties |= CXXTagPropertyScopedEnum;
+		if(g_cxx.uKeywordState & CXXParserKeywordStateSeenExport)
+		{
+			uProperties |= CXXTagPropertyExport;
+			bEnumExported = true;
+		}
+		tag->isFileScope = (bEnumExported || cxxScopeIsExported())
+			? 0
+			: tag->isFileScope;
+
+		if(uProperties)
+			pszProperties = cxxTagSetProperties(uProperties);
 
 		iCorkQueueIndex = cxxTagCommit(&iCorkQueueIndexFQ);
 		cxxTagUseTokenAsPartOfDefTag(iCorkQueueIndex, pEnumName);
@@ -889,7 +943,7 @@ bool cxxParserParseEnum(void)
 			cxxTokenDestroy(pTypeName);
 	}
 
-	cxxScopePush(pEnumName,CXXScopeTypeEnum,CXXScopeAccessPublic);
+	cxxScopePushExported(pEnumName,CXXScopeTypeEnum,CXXScopeAccessPublic, bEnumExported);
 	iPushedScopes++;
 
 	vString * pScopeName = cxxScopeGetFullNameAsString();
@@ -921,7 +975,10 @@ bool cxxParserParseEnum(void)
 			tag = cxxTagBegin(CXXTagKindENUMERATOR,pFirst);
 			if(tag)
 			{
-				tag->isFileScope = !isInputHeaderFile();
+				// If the enum is export'ed, we consider that its
+				// enumerators are not limited in a file scope.
+				tag->isFileScope = !isInputHeaderFile() && !cxxScopeIsExported();
+
 				cxxTagCommit(NULL);
 			}
 		}
@@ -1247,7 +1304,7 @@ static bool cxxParserParseClassStructOrUnionInternal(
 			);
 		cxxTokenChainTake(g_cxx.pTokenChain,pClassName);
 	} else {
-		pClassName = cxxTokenCreateAnonymousIdentifier(uTagKind);
+		pClassName = cxxTokenCreateAnonymousIdentifier(uTagKind, NULL);
 		bAnonymous = true;
 		CXX_DEBUG_PRINT(
 				"Class/struct/union name is %s (anonymous)",
@@ -1302,6 +1359,7 @@ static bool cxxParserParseClassStructOrUnionInternal(
 	bool bGotTemplate = g_cxx.pTemplateTokenChain &&
 			(g_cxx.pTemplateTokenChain->iCount > 0) &&
 			cxxParserCurrentLanguageIsCPP();
+	bool bExported = uInitialKeywordState & CXXParserKeywordStateSeenExport;
 
 	if(tag)
 	{
@@ -1352,16 +1410,32 @@ static bool cxxParserParseClassStructOrUnionInternal(
 
 		tag->isFileScope = !isInputHeaderFile();
 
+		unsigned int uProperties = 0;
+		if(bExported)
+			uProperties |= CXXTagPropertyExport;
+		// Overwrite the assigned value if the language object is export'ed
+		// directly or indirectly.
+		tag->isFileScope = (bExported || cxxScopeIsExported())
+			? 0
+			: tag->isFileScope;
+
+		vString * pszProperties = NULL;
+
+		if(uProperties)
+			pszProperties = cxxTagSetProperties(uProperties);
+
 		iCorkQueueIndex = cxxTagCommit(&iCorkQueueIndexFQ);
 		cxxTagUseTokenAsPartOfDefTag(iCorkQueueIndex, pClassName);
 
+		vStringDelete (pszProperties); /* NULL is acceptable. */
 	}
 
-	cxxScopePush(
+	cxxScopePushExported(
 			pClassName,
 			uScopeType,
 			(uTagKind == CXXTagCPPKindCLASS) ?
-				CXXScopeAccessPrivate : CXXScopeAccessPublic
+				CXXScopeAccessPrivate : CXXScopeAccessPublic,
+			bExported
 		);
 
 	if(
@@ -1497,7 +1571,8 @@ void cxxParserAnalyzeOtherStatement(void)
 
 	CXXToken * t = cxxTokenChainFirst(g_cxx.pTokenChain);
 
-	if(!cxxTokenTypeIsOneOf(t,CXXTokenTypeIdentifier | CXXTokenTypeKeyword))
+	if(!cxxTokenTypeIsOneOf(t,CXXTokenTypeIdentifier | CXXTokenTypeKeyword
+							| CXXTokenTypeMultipleColons))
 	{
 		CXX_DEBUG_LEAVE_TEXT("Statement does not start with an identifier or keyword");
 		return;
@@ -1984,6 +2059,7 @@ rescanReason cxxCppParserMain(const unsigned int passCount)
 	cxxKeywordEnablePublicProtectedPrivate(g_cxx.bConfirmedCPPLanguage);
 
 	rescanReason r = cxxParserMain(passCount);
+	cxxParserDestroyCurrentModuleToken();
 	CXX_DEBUG_LEAVE();
 	return r;
 }

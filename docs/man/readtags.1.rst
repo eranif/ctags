@@ -6,7 +6,7 @@ readtags
 
 Find tag file entries matching specified names
 
-:Version: 6.0.0
+:Version: 6.1.0
 :Manual group: Universal Ctags
 :Manual section: 1
 
@@ -48,7 +48,7 @@ The behavior of reading tags can be controlled using these options:
 	Use specified tag file (default: "tags").
 	Giving "-" as TAGFILE indicates reading the tags file content from the
 	standard input. "-" can make the command line simpler. However,
-	it doesn't mean efficient; readtags stores the data to a temorary
+	it doesn't mean efficient; readtags stores the data to a temporary
 	file and reads that file for taking the ACTION.
 
 ``-s[0|1|2]``, ``--override-sort-detection METHOD``
@@ -73,6 +73,19 @@ Controlling the Output
 By default, the output of readtags contains only the name, input and pattern
 field. The Output can be tweaked using these options:
 
+``-A``, ``--absolute-input``
+	Do the same as ``-C`` option but use only absolute path form.
+
+``-C``, ``--canonicalize-input``
+	Resolve '..' and '.' in input fields of regular tags.
+	This produces a unique representation of the input path.
+	This option works only with tags files having ``!_TAG_PROC_CWD`` pseudo
+	tag.
+
+	NOTE: The current implementation accepts only ``!_TAG_PROC_CWD``
+	starting with ``/``; a Windows directory name starting with a
+	drive letter like ``C:\Somewhere`` is not acceptable.
+
 ``-d``, ``--debug``
 	Turn on debugging output.
 
@@ -85,12 +98,22 @@ field. The Output can be tweaked using these options:
 ``-n``, ``--line-number``
 	Also include the line number field when ``-e`` option is give.
 
+``-P``, ``--with-pseudo-tags``
+	List pseudo tags as if ``-D`` option is specified but continues processing without exiting.
+
 About the ``-E`` option: certain characters are escaped in a tags file, to make
 it machine-readable. e.g., ensuring no tabs character appear in fields other
 than the pattern field. By default, readtags translates them to make it
 human-readable, but when utilizing readtags output in a script or a client
 tool, ``-E`` option should be used. See :ref:`ctags-client-tools(7) <ctags-client-tools(7)>` for more
 discussion on this.
+
+About printing input fields ({tagfile} in :ref:`tags(5) <tags(5)>`) with ``-E`` option: readtags
+always prints the input field literally (as it is in the tags file), and when
+ctags writes the tags file, the escaping rules are applied only when
+``TAG_OUTPUT_MODE`` pseudo tag has "u-ctags" and ``TAG_OUTPUT_FILESEP`` has
+"slash" as values for their input fields, as explained in
+:ref:`ctags-client-tools(7) <ctags-client-tools(7)>`.
 
 Filtering, Sorting, and Formatting
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -375,7 +398,7 @@ as input for readtags:
    foo	input.c	6;"	f	typeref:typename:int	file:	signature:(int v)
    main	input.c	16;"	f	typeref:typename:int	signature:(int argc,char ** argv)
 
-An exapmle for printing only function names:
+An example for printing only function names:
 
 .. code-block:: console
 
@@ -451,5 +474,5 @@ Darren Hiebert <dhiebert@users.sourceforge.net>
 http://DarrenHiebert.com/
 
 The readtags command and libreadtags maintained at Universal Ctags
-are derived from readtags.c and readtags.h developd at
+are derived from readtags.c and readtags.h developed at
 http://ctags.sourceforge.net.

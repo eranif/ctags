@@ -80,6 +80,15 @@ used in ctags main part. The functions are used to load option files,
 for example.
 
 
+Escaping and unescaping input fields
+......................................................................
+
+.. figure:: input-escaping.svg
+	    :scale: 80%
+
+.. figure:: input-unescaping.svg
+	    :scale: 80%
+
 .. NOT REVIEWED YET
 
 .. _output-tag-stream:
@@ -500,7 +509,7 @@ the input character by character can obtain the current offset by calling
 
 In some cases, you may want to specifying the offset of the end of
 line (EOL).  A macro ``EOL_CHAR_OFFSET`` defined in ``main/promise.h``
-can be used for specying EOL in abstracted way; you don't have to find
+can be used for specifying EOL in abstracted way; you don't have to find
 the real offset for the EOL.
 
 Internal design

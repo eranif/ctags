@@ -59,6 +59,7 @@ LDFLAGS = -s
 endif
 
 .SUFFIXES: .c .o .ctags .peg
+.PHONEY: copy_gnulib_heads
 
 #
 # Silent/verbose commands
@@ -100,6 +101,10 @@ peg/%.c peg/%.h: peg/%.peg $(PACKCC)
 
 all: copy_gnulib_heads $(PACKCC) ctags.exe readtags.exe optscript.exe utiltest.exe
 
+copy_gnulib_heads:
+	cp win32/config_mingw.h config.h
+	cp win32/gnulib_h/langinfo.h win32/gnulib_h/locale.h win32/gnulib_h/unistd.h win32/gnulib_h/fnmatch.h win32/gnulib_h/string.h win32/gnulib_h/wchar.h gnulib
+
 ctags: ctags.exe
 
 $(PACKCC_OBJ): $(PACKCC_SRC)
@@ -108,7 +113,7 @@ $(PACKCC_OBJ): $(PACKCC_SRC)
 $(PACKCC): $(PACKCC_OBJ)
 	$(V_CC) $(CC_FOR_PACKCC) $(OPT) -o $@ $^
 
-ctags.exe: $(ALL_OBJS) $(ALL_HEADS) $(PEG_HEADS) $(PEG_EXTRA_HEADS) $(MINGW_GNULIB_HEADS) $(WIN32_HEADS)
+ctags.exe: copy_gnulib_heads $(ALL_OBJS) $(ALL_HEADS) $(PEG_HEADS) $(PEG_EXTRA_HEADS) $(MINGW_GNULIB_HEADS) $(WIN32_HEADS)
 	$(V_CC) $(CC) $(OPT) $(CFLAGS) $(LDFLAGS) $(DEFINES) $(INCLUDES) -o $@ $(ALL_OBJS) $(LIBS)
 
 $(RES_OBJ): win32/ctags.rc win32/ctags.exe.manifest win32/resource.h
@@ -119,18 +124,14 @@ extra-cmds/%.o: extra-cmds/%.c
 libreadtags/%.o: libreadtags/%.c
 	$(V_CC) $(CC) -c $(OPT) $(CFLAGS) -Ilibreadtags -o $@ $<
 
-readtags.exe: $(READTAGS_OBJS) $(READTAGS_HEADS) $(UTIL_OBJS) $(UTIL_HEADS) $(READTAGS_DSL_OBJS) $(READTAGS_DSL_HEADS) $(GNULIB_OBJS) $(MINGW_GNULIB_HEADS)
+readtags.exe: copy_gnulib_heads $(READTAGS_OBJS) $(READTAGS_HEADS) $(UTIL_OBJS) $(UTIL_HEADS) $(READTAGS_DSL_OBJS) $(READTAGS_DSL_HEADS) $(GNULIB_OBJS) $(MINGW_GNULIB_HEADS)
 	$(V_CC) $(CC) $(OPT) -o $@ $(READTAGS_OBJS) $(UTIL_OBJS) $(READTAGS_DSL_OBJS) $(GNULIB_OBJS) $(LIBS)
 
-optscript.exe: $(ALL_LIB_OBJS) $(OPTSCRIPT_OBJS) $(ALL_LIB_HEADS) $(OPTSCRIPT_DSL_HEADS) $(WIN32_HEADS)
+optscript.exe: copy_gnulib_heads $(ALL_LIB_OBJS) $(OPTSCRIPT_OBJS) $(ALL_LIB_HEADS) $(OPTSCRIPT_DSL_HEADS) $(WIN32_HEADS)
 	$(V_CC) $(CC) $(OPT) $(CFLAGS) $(LDFLAGS) $(DEFINES) $(INCLUDES) -o $@ $(ALL_LIB_OBJS) $(OPTSCRIPT_OBJS) $(LIBS)
 
-utiltest.exe: $(UTIL_OBJS) $(UTIL_HEAD) $(UTILTEST_OBJS) $(UTILTEST_HEADS)
+utiltest.exe: copy_gnulib_heads $(UTIL_OBJS) $(UTIL_HEAD) $(UTILTEST_OBJS) $(UTILTEST_HEADS)
 	$(V_CC) $(CC) $(OPT) $(CFLAGS) $(LDFLAGS) -o $@ $(UTIL_OBJS) $(UTILTEST_OBJS)
-
-copy_gnulib_heads:
-	cp win32/config_mingw.h config.h
-	cp win32/gnulib_h/langinfo.h win32/gnulib_h/locale.h win32/gnulib_h/unistd.h win32/gnulib_h/fnmatch.h win32/gnulib_h/string.h win32/gnulib_h/wchar.h gnulib
 
 clean:
 	$(SILENT) echo Cleaning

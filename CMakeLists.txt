@@ -56,9 +56,7 @@ set(XML_SRCS
 set(YAML_SRCS ${CMAKE_CURRENT_LIST_DIR}/parsers/yaml.c ${CMAKE_CURRENT_LIST_DIR}/parsers/ansibleplaybook.c
               ${CMAKE_CURRENT_LIST_DIR}/parsers/openapi.c ${CMAKE_CURRENT_LIST_DIR}/parsers/yamlfrontmatter.c)
 
-if(WIN32)
-  set(PCRE2_SRCS ${CMAKE_CURRENT_LIST_DIR}/main/lregex-pcre2.c)
-endif()
+set(PCRE2_SRCS ${CMAKE_CURRENT_LIST_DIR}/main/lregex-pcre2.c)
 
 file(GLOB MAIN_SRCS ${CMAKE_CURRENT_LIST_DIR}/main/*.c)
 if(WIN32)
@@ -72,10 +70,10 @@ if(WIN32)
       ${CMAKE_CURRENT_LIST_DIR}/gnulib/mempcpy.c
       ${CMAKE_CURRENT_LIST_DIR}/gnulib/wmempcpy.c
       ${CMAKE_CURRENT_LIST_DIR}/gnulib/localeconv.c)
-  set(RUBY_SRCS ${CMAKE_CURRENT_LIST_DIR}/parsers/i18nrubygem.c)
-elseif()
+else()
   file(GLOB DSL_SRCS ${CMAKE_CURRENT_LIST_DIR}/dsl/*.c)
 endif()
+set(RUBY_SRCS ${CMAKE_CURRENT_LIST_DIR}/parsers/i18nrubygem.c)
 
 file(GLOB LIBREADTAGS_SRCS ${CMAKE_CURRENT_LIST_DIR}/libreadtags/*.c)
 

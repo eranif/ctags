@@ -3021,7 +3021,8 @@ static void setBooleanToXtagWithWarning(booleanOption *const option, bool value)
 		error (WARNING, "\"--%s\" option is obsolete; use \"--extras=%c%c\" instead",
 			   option->name, value? '+': '-', x);
 
-	xtagType t = (xtagType)option->pValue;
+    bool v = *option->pValue;
+	xtagType t = (xtagType)v;
 	enableXtag (t, value);
 }
 

@@ -1,7 +1,7 @@
 # Copyright (c) 2021, Aleksandr Platonov
 #
-# This source code is released for free distribution under the terms of the GNU General Public License version 2 or (at
-# your option) any later version.
+# This source code is released for free distribution under the terms of the GNU
+# General Public License version 2 or (at your option) any later version.
 cmake_minimum_required(VERSION 3.16)
 
 project(ctags)
@@ -22,15 +22,27 @@ if(UNIX AND NOT APPLE)
 endif()
 
 if(WIN32)
-  execute_process(COMMAND cp ${CMAKE_CURRENT_LIST_DIR}/win32/config_mingw.h ${CMAKE_CURRENT_LIST_DIR}/config.h
-                  OUTPUT_VARIABLE _OUT)
   execute_process(
     COMMAND
-      cp ${CMAKE_CURRENT_LIST_DIR}/win32/gnulib_h/langinfo.h ${CMAKE_CURRENT_LIST_DIR}/win32/gnulib_h/locale.h
-      ${CMAKE_CURRENT_LIST_DIR}/win32/gnulib_h/unistd.h ${CMAKE_CURRENT_LIST_DIR}/win32/gnulib_h/fnmatch.h
-      ${CMAKE_CURRENT_LIST_DIR}/win32/gnulib_h/string.h ${CMAKE_CURRENT_LIST_DIR}/win32/gnulib_h/wchar.h
-      ${CMAKE_CURRENT_LIST_DIR}/gnulib
+      ${CMAKE_COMMAND} -E copy_if_different
+      ${CMAKE_CURRENT_LIST_DIR}/win32/config_mingw.h
+      ${CMAKE_CURRENT_LIST_DIR}/config.h
     OUTPUT_VARIABLE _OUT)
+
+  list(APPEND FILES_TO_COPY langinfo.h)
+  list(APPEND FILES_TO_COPY locale.h)
+  list(APPEND FILES_TO_COPY unistd.h)
+  list(APPEND FILES_TO_COPY fnmatch.h)
+  list(APPEND FILES_TO_COPY string.h)
+  list(APPEND FILES_TO_COPY wchar.h)
+  foreach(FILE_TO_COPY ${FILES_TO_COPY})
+    execute_process(
+      COMMAND
+        ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_LIST_DIR}/win32/gnulib_h/${FILE_TO_COPY}
+        ${CMAKE_CURRENT_LIST_DIR}/gnulib/${FILE_TO_COPY}
+      OUTPUT_VARIABLE _OUT)
+  endforeach()
 
   include_directories(
     ${CMAKE_CURRENT_LIST_DIR}
@@ -53,14 +65,18 @@ set(XML_SRCS
     ${CMAKE_CURRENT_LIST_DIR}/parsers/xml.c
     ${CMAKE_CURRENT_LIST_DIR}/parsers/xslt.c)
 
-set(YAML_SRCS ${CMAKE_CURRENT_LIST_DIR}/parsers/yaml.c ${CMAKE_CURRENT_LIST_DIR}/parsers/ansibleplaybook.c
-              ${CMAKE_CURRENT_LIST_DIR}/parsers/openapi.c ${CMAKE_CURRENT_LIST_DIR}/parsers/yamlfrontmatter.c)
+set(YAML_SRCS
+    ${CMAKE_CURRENT_LIST_DIR}/parsers/yaml.c
+    ${CMAKE_CURRENT_LIST_DIR}/parsers/ansibleplaybook.c
+    ${CMAKE_CURRENT_LIST_DIR}/parsers/openapi.c
+    ${CMAKE_CURRENT_LIST_DIR}/parsers/yamlfrontmatter.c)
 
 set(PCRE2_SRCS ${CMAKE_CURRENT_LIST_DIR}/main/lregex-pcre2.c)
 
 file(GLOB MAIN_SRCS ${CMAKE_CURRENT_LIST_DIR}/main/*.c)
 if(WIN32)
-  set(DSL_SRCS ${CMAKE_CURRENT_LIST_DIR}/dsl/es.c ${CMAKE_CURRENT_LIST_DIR}/dsl/optscript.c)
+  set(DSL_SRCS ${CMAKE_CURRENT_LIST_DIR}/dsl/es.c
+               ${CMAKE_CURRENT_LIST_DIR}/dsl/optscript.c)
   set(GNULIB_SRCS
       ${CMAKE_CURRENT_LIST_DIR}/gnulib/regex.c
       ${CMAKE_CURRENT_LIST_DIR}/gnulib/nl_langinfo.c
@@ -133,7 +149,8 @@ if(NOT HAVE_FNMATCH_H)
   include_directories(fnmatch)
 endif()
 
-# check_include_file(seccomp.h HAVE_SECCOMP) if (HAVE_SECCOMP) list(APPEND LIBS seccomp) endif()
+# check_include_file(seccomp.h HAVE_SECCOMP) if (HAVE_SECCOMP) list(APPEND LIBS
+# seccomp) endif()
 
 file(READ main/ctags.h CTAGS_H_CONTENTS)
 string(REPLACE "\n" ";" CTAGS_H_LINES "${CTAGS_H_CONTENTS}")

@@ -91,8 +91,6 @@ else()
 endif()
 set(RUBY_SRCS ${CMAKE_CURRENT_LIST_DIR}/parsers/i18nrubygem.c)
 
-file(GLOB LIBREADTAGS_SRCS ${CMAKE_CURRENT_LIST_DIR}/libreadtags/*.c)
-
 list(REMOVE_ITEM MAIN_SRCS ${CMAKE_CURRENT_LIST_DIR}/main/mini-geany.c)
 file(GLOB OPTLIB_SRCS ${CMAKE_CURRENT_LIST_DIR}/optlib/*.c)
 file(GLOB PARSERS_CXX_SRCS ${CMAKE_CURRENT_LIST_DIR}/parsers/cxx/*.c)
